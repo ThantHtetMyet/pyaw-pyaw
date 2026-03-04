@@ -1,5 +1,5 @@
 import mqtt from 'mqtt';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
 import InfoModal from './components/InfoModal/InfoModal';
@@ -8,6 +8,8 @@ const DEFAULT_SESSION_MS = 5 * 60 * 1000;
 const DEFAULT_API_BASE_URL = 'https://pyaw-pyaw-api.onrender.com';
 const CLIENT_ID_KEY = 'pyaw-pyaw-client-id';
 const MIN_SCAN_VISIBILITY_MS = 5 * 1000;
+const ROOM_ACTIVITY_EVENT_KEY = 'pyaw-pyaw-room-activity-event';
+const HIDDEN_TOPICS_KEY = 'pyaw-pyaw-hidden-topics';
 
 function normalizeBaseUrl(urlText) {
   return (urlText || '').trim().replace(/\/+$/, '');
@@ -17,10 +19,6 @@ function resolveApiBaseUrl() {
   const configured = normalizeBaseUrl(process.env.REACT_APP_API_BASE_URL);
   if (configured) {
     return configured;
-  }
-  const { hostname } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:4000';
   }
   return DEFAULT_API_BASE_URL;
 }
@@ -110,13 +108,64 @@ function readHostIdPayload(hostId) {
   }
 }
 
-function RoomTab({ topic, role, sessionExpiresAt, username }) {
+function getStoredHostRoomTopic() {
+  try {
+    const raw = window.localStorage.getItem('pyaw-pyaw-active-room');
+    if (!raw) {
+      return '';
+    }
+    const stored = JSON.parse(raw);
+    if (!stored || stored.role !== 'host') {
+      return '';
+    }
+    if (!Number.isFinite(stored.sessionExpiresAt) || stored.sessionExpiresAt <= Date.now()) {
+      window.localStorage.removeItem('pyaw-pyaw-active-room');
+      return '';
+    }
+    return typeof stored.topic === 'string' ? stored.topic : '';
+  } catch {
+    return '';
+  }
+}
+
+function emitRoomActivityEvent(eventData) {
+  window.localStorage.setItem(
+    ROOM_ACTIVITY_EVENT_KEY,
+    JSON.stringify({
+      ...eventData,
+      updatedAt: Date.now(),
+    })
+  );
+}
+
+function readHiddenTopics() {
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_TOPICS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(topic => typeof topic === 'string' && topic.trim());
+  } catch {
+    return [];
+  }
+}
+
+function writeHiddenTopics(topics) {
+  window.localStorage.setItem(HIDDEN_TOPICS_KEY, JSON.stringify(Array.from(topics)));
+}
+
+function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [isPeerJoined, setIsPeerJoined] = useState(false);
   const [messages, setMessages] = useState([]);
   const [showChatInterface, setShowChatInterface] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
+  const [isRoomKilled, setIsRoomKilled] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
     Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000))
   );
@@ -125,6 +174,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username }) {
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
+  const isChatLocked = isExpired || isRoomKilled;
+  const isHostRole = role === 'host';
 
   const addMessage = (sender, text) => {
     if (!text) {
@@ -253,6 +304,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username }) {
           }
 
           if (messageTopic.endsWith('/chat')) {
+            if (payload?.type === 'kill') {
+              setIsRoomKilled(true);
+              setShowChatInterface(true);
+              addMessage('System', payload?.text || 'Host ended this chat.');
+              return;
+            }
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
             const senderName = payload?.senderName || (payload?.senderRole === 'host' ? 'Host' : 'Guest');
@@ -285,7 +342,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username }) {
 
   const handleSendMessage = () => {
     const messageText = inputValue.trim();
-    if (!messageText || !mqttClientRef.current?.connected || isExpired) {
+    if (!messageText || !mqttClientRef.current?.connected || isChatLocked) {
       return;
     }
 
@@ -302,14 +359,98 @@ function RoomTab({ topic, role, sessionExpiresAt, username }) {
     setInputValue('');
   };
 
+  const notifyMapAndClose = payload => {
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(
+          {
+            type: 'pyaw-pyaw-room-exit',
+            ...payload,
+          },
+          window.location.origin
+        );
+      }
+    } catch {
+    }
+    if (window.opener && !window.opener.closed) {
+      window.close();
+      window.setTimeout(() => {
+        if (!window.closed) {
+          window.location.href = window.location.pathname;
+        }
+      }, 120);
+      return;
+    }
+    window.location.href = window.location.pathname;
+  };
+
+  const handleExitChat = async () => {
+    const isHost = isHostRole;
+    if (isHost && mqttClientRef.current?.connected) {
+      mqttClientRef.current.publish(
+        `${topic}/chat`,
+        JSON.stringify({
+          type: 'kill',
+          senderId: clientIdRef.current,
+          senderRole: role,
+          senderName: username,
+          text: 'Host killed this room.',
+        })
+      );
+    } else if (mqttClientRef.current?.connected) {
+      mqttClientRef.current.publish(
+        `${topic}/presence`,
+        JSON.stringify({
+          type: 'leave',
+          senderId: clientIdRef.current,
+          senderRole: role,
+          senderName: username,
+        })
+      );
+    }
+    if (isHost) {
+      try {
+        await requestJson('/api/rooms/terminate', {
+          method: 'POST',
+          body: JSON.stringify({ topic }),
+        });
+      } catch {
+      }
+      window.localStorage.removeItem('pyaw-pyaw-active-room');
+      emitRoomActivityEvent({ type: 'terminated', topic });
+    }
+    mqttClientRef.current?.end(true);
+    const exitPayload = { refreshRooms: true, terminatedByHost: isHost, topic };
+    if (typeof onExit === 'function') {
+      onExit(exitPayload);
+      return;
+    }
+    notifyMapAndClose(exitPayload);
+  };
+
   const timerMinutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
   const timerSeconds = String(remainingSeconds % 60).padStart(2, '0');
 
   return (
     <div className="room-tab-page">
       <div className="room-panel">
-        <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
+        <div className="room-top-row">
+          <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
+          <button
+            type="button"
+            className={`room-action-button room-exit-top ${isHostRole ? 'danger' : ''}`}
+            onClick={handleExitChat}
+            aria-label={isHostRole ? 'Kill room' : 'Exit chat'}
+          >
+            <svg viewBox="0 0 24 24" className="room-action-icon" aria-hidden="true">
+              <path d="M15 3h-6a2 2 0 0 0-2 2v3h2V5h6v14h-6v-3H7v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
+              <path d="M13.3 8.3l1.4 1.4-1.3 1.3H5v2h8.4l1.3 1.3-1.4 1.4L9.6 12z" />
+            </svg>
+            {isHostRole ? 'Kill room' : 'Exit'}
+          </button>
+        </div>
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
+        {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
         {isWaiting && (
           <div className="room-waiting">
             <div className="room-waiting-icon">
@@ -354,8 +495,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username }) {
                 onChange={event => setInputValue(event.target.value)}
                 onKeyDown={event => event.key === 'Enter' && handleSendMessage()}
                 placeholder="Type a message..."
+                disabled={isChatLocked}
               />
-              <button type="button" className="chat-send-button" onClick={handleSendMessage}>
+              <button type="button" className="chat-send-button" onClick={handleSendMessage} disabled={isChatLocked}>
                 Send
               </button>
             </div>
@@ -369,6 +511,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username }) {
 
 function App() {
   const [createdRoom, setCreatedRoom] = useState(null);
+  const [hostRoomTopic, setHostRoomTopic] = useState(() => getStoredHostRoomTopic());
+  const [hiddenTopics, setHiddenTopics] = useState(() => new Set(readHiddenTopics()));
   const [locatedPosition, setLocatedPosition] = useState(null);
   const [searchedRooms, setSearchedRooms] = useState([]);
   const [isSearchingRooms, setIsSearchingRooms] = useState(false);
@@ -388,6 +532,21 @@ function App() {
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [roomToJoin, setRoomToJoin] = useState(null);
   const [joinUsername, setJoinUsername] = useState('');
+  const [activeChatRoom, setActiveChatRoom] = useState(null);
+
+  const hideRoomTopic = useCallback(topic => {
+    if (!topic) {
+      return;
+    }
+    setHiddenTopics(prev => {
+      const next = new Set(prev);
+      next.add(topic);
+      writeHiddenTopics(next);
+      return next;
+    });
+    setSearchedRooms(prev => prev.filter(room => room.topic !== topic));
+    setCreatedRoom(prev => (prev?.topic === topic ? null : prev));
+  }, []);
 
   // Initial Geolocation Request
   useEffect(() => {
@@ -426,6 +585,16 @@ function App() {
       }
       const expiresAt = parseExpiresAt(room.expiresAt);
       setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt });
+      setHostRoomTopic(room.topic);
+      setHiddenTopics(prev => {
+        if (!prev.has(room.topic)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(room.topic);
+        writeHiddenTopics(next);
+        return next;
+      });
       
       const activeRoomData = {
         topic: room.topic,
@@ -434,17 +603,13 @@ function App() {
         username: roomData.username || '',
       };
       window.localStorage.setItem('pyaw-pyaw-active-room', JSON.stringify(activeRoomData));
-
-      const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
-        room.topic
-      )}&role=host&sessionExpiresAt=${expiresAt}&username=${encodeURIComponent(roomData.username || '')}`;
-      window.open(roomUrl, '_blank', 'noopener,noreferrer');
+      setActiveChatRoom(activeRoomData);
     } catch (error) {
       setModalMessage(error.message || 'Unable to create room.');
     }
   };
 
-  const handleSearchRooms = async () => {
+  const handleSearchRooms = useCallback(async () => {
     const scanId = activeScanIdRef.current + 1;
     activeScanIdRef.current = scanId;
     const startedAt = Date.now();
@@ -466,7 +631,8 @@ function App() {
             username: metadata?.username || 'Anonymous',
             messageType: metadata?.messageType || 'Hi',
           };
-        });
+        })
+        .filter(room => !hiddenTopics.has(room.topic));
       if (activeScanIdRef.current !== scanId) {
         return [];
       }
@@ -484,7 +650,7 @@ function App() {
         setIsSearchingRooms(false);
       }
     }
-  };
+  }, [hiddenTopics]);
 
   const handleJoinRoom = async room => {
     if (!room?.topic || !room?.sessionExpiresAt) {
@@ -493,6 +659,22 @@ function App() {
     setRoomToJoin(room);
     setJoinUsername('');
     setJoinModalOpen(true);
+    return true;
+  };
+
+  const handleOpenRoom = room => {
+    const topic = room?.topic || createdRoom?.topic;
+    if (!topic) {
+      return false;
+    }
+    const expiresAt = parseExpiresAt(room?.sessionExpiresAt || createdRoom?.sessionExpiresAt);
+    const username = room?.username || createdRoom?.username || '';
+    setActiveChatRoom({
+      topic,
+      role: 'host',
+      sessionExpiresAt: expiresAt,
+      username,
+    });
     return true;
   };
 
@@ -511,16 +693,32 @@ function App() {
       });
       const joinedRoom = response?.room;
       const expiresAt = parseExpiresAt(joinedRoom?.expiresAt || room.sessionExpiresAt);
-      const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
-        room.topic
-      )}&role=guest&sessionExpiresAt=${expiresAt}&username=${encodeURIComponent(joinUsername.trim())}`;
-      window.open(roomUrl, '_blank', 'noopener,noreferrer');
+      setActiveChatRoom({
+        topic: room.topic,
+        role: 'guest',
+        sessionExpiresAt: expiresAt,
+        username: joinUsername.trim(),
+      });
       setJoinModalOpen(false);
       setRoomToJoin(null);
     } catch (error) {
       setModalMessage(error.message || 'Unable to join room.');
     }
   };
+
+  const handleExitChatRoom = useCallback(
+    payload => {
+      setActiveChatRoom(null);
+      if (payload?.terminatedByHost) {
+        hideRoomTopic(payload?.topic);
+        setCreatedRoom(prev => (prev?.topic === payload?.topic ? null : prev));
+        setHostRoomTopic('');
+        window.localStorage.removeItem('pyaw-pyaw-active-room');
+      }
+      handleSearchRooms();
+    },
+    [handleSearchRooms, hideRoomTopic]
+  );
 
   const handleLocate = position => {
     if (!Number.isFinite(position?.lat) || !Number.isFinite(position?.lng)) {
@@ -540,6 +738,71 @@ function App() {
     setIsNoRoomVisible(false);
   };
 
+  useEffect(() => {
+    const handleRoomExitMessage = event => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      if (event.data?.type !== 'pyaw-pyaw-room-exit') {
+        return;
+      }
+      setCreatedRoom(null);
+      if (event.data?.terminatedByHost) {
+        hideRoomTopic(event.data?.topic);
+        setHostRoomTopic('');
+        window.localStorage.removeItem('pyaw-pyaw-active-room');
+      }
+      if (event.data?.topic) {
+        setActiveChatRoom(prev => (prev?.topic === event.data.topic ? null : prev));
+      }
+      handleSearchRooms();
+    };
+    window.addEventListener('message', handleRoomExitMessage);
+    return () => {
+      window.removeEventListener('message', handleRoomExitMessage);
+    };
+  }, [handleSearchRooms, hideRoomTopic]);
+
+  useEffect(() => {
+    const handleStorage = event => {
+      if (event.key !== ROOM_ACTIVITY_EVENT_KEY || !event.newValue) {
+        return;
+      }
+      try {
+        const payload = JSON.parse(event.newValue);
+        if (payload?.type !== 'terminated') {
+          return;
+        }
+        if (payload?.topic) {
+          hideRoomTopic(payload.topic);
+          setCreatedRoom(prev => (prev?.topic === payload.topic ? null : prev));
+          setActiveChatRoom(prev => (prev?.topic === payload.topic ? null : prev));
+        }
+        setHostRoomTopic('');
+        window.localStorage.removeItem('pyaw-pyaw-active-room');
+        handleSearchRooms();
+      } catch {
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [handleSearchRooms, hideRoomTopic]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleSearchRooms();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [handleSearchRooms]);
+
   if (roomTopicFromUrl) {
     return <RoomTab topic={roomTopicFromUrl} role={roomRole} sessionExpiresAt={sessionExpiresAt} username={usernameFromUrl} />;
   }
@@ -549,10 +812,12 @@ function App() {
       <InfoModal message={modalMessage} onClose={() => setModalMessage('')} />
       <MapComponent
         createdRoom={createdRoom}
+        hostRoomTopic={hostRoomTopic}
         locatedPosition={locatedPosition}
         searchedRooms={searchedRooms}
         isSearchingRooms={isSearchingRooms}
         onJoinRoom={handleJoinRoom}
+        onOpenRoom={handleOpenRoom}
         showNoRoomFound={!isSearchingRooms && scanResult === 'empty' && isNoRoomVisible}
         onDismissNoRoom={handleDismissNoRoom}
         onCancelScan={handleCancelScan}
@@ -562,6 +827,7 @@ function App() {
         onSearchRooms={handleSearchRooms}
         onJoinRoom={handleJoinRoom}
         onLocate={handleLocate}
+        onResumeRoom={handleOpenRoom}
       />
       {joinModalOpen && (
         <div className="glass-modal-backdrop" onClick={() => setJoinModalOpen(false)}>
@@ -595,6 +861,17 @@ function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {activeChatRoom && (
+        <div className="room-overlay">
+          <RoomTab
+            topic={activeChatRoom.topic}
+            role={activeChatRoom.role}
+            sessionExpiresAt={activeChatRoom.sessionExpiresAt}
+            username={activeChatRoom.username}
+            onExit={handleExitChatRoom}
+          />
         </div>
       )}
     </div>

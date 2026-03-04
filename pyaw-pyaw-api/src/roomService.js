@@ -88,14 +88,21 @@ export const markRoomJoined = async ({ topic, guestId }) => {
   const payload = {
     last_seen_at: nowIso(),
     last_joined_at: nowIso(),
-    status: 'active',
   };
   if (guestId) {
     payload.last_guest_id = guestId;
   }
 
-  const { error } = await supabase.from(roomsTable).update(payload).eq('topic', topic);
+  const { error } = await supabase.from(roomsTable).update(payload).eq('topic', topic).eq('status', 'active');
   throwOnError(error, 'Failed to update joined room');
+};
+
+export const terminateRoomByTopic = async topic => {
+  const { error } = await supabase
+    .from(roomsTable)
+    .update({ status: 'terminated', last_seen_at: nowIso() })
+    .eq('topic', topic);
+  throwOnError(error, 'Failed to terminate room');
 };
 
 export const insertRoomMessage = async ({ topic, senderRole, senderId, text, payload }) => {

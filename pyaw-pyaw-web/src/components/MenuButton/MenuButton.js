@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './MenuButton.css';
 
-function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
+function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedGender, setSelectedGender] = useState('Male');
@@ -13,6 +13,11 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
   const [locationError, setLocationError] = useState('');
   const [resumeRoom, setResumeRoom] = useState(null);
   const containerRef = useRef(null);
+  const emitLayoutChange = () => {
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event('pyaw-pyaw-layout-change'));
+    }, 30);
+  };
   
   useEffect(() => {
     const handleDocumentClick = event => {
@@ -60,22 +65,24 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
     setUsername('');
     setMessageType('Hi');
     setFreeText('');
+    emitLayoutChange();
   };
 
   const handleResumeRoom = () => {
     if (!resumeRoom) return;
-    
-    const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
-      resumeRoom.topic
-    )}&role=${resumeRoom.role}&sessionExpiresAt=${resumeRoom.sessionExpiresAt}&username=${encodeURIComponent(resumeRoom.username || '')}`;
-    
-    window.open(roomUrl, '_blank', 'noopener,noreferrer');
+    onResumeRoom?.(resumeRoom);
     setResumeRoom(null);
+    emitLayoutChange();
+  };
+  const closeResumeRoom = () => {
+    setResumeRoom(null);
+    emitLayoutChange();
   };
 
   const handleCloseModal = () => {
     setLocationError('');
     setIsCreateModalOpen(false);
+    emitLayoutChange();
   };
 
   const handleSearchClick = async () => {
@@ -149,6 +156,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
         setFreeText('');
         setUsername('');
         setMessageType('Hi');
+        emitLayoutChange();
       },
       error => {
         if (error.code === error.PERMISSION_DENIED) {
@@ -202,7 +210,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
         <div className="glass-modal-backdrop" onClick={handleCloseModal}>
           <div className="glass-modal" onClick={event => event.stopPropagation()}>
             <div className="modal-header-row">
-              <h3 className="modal-title">Create Room</h3>
+              <h3 className="modal-title">Create Chat-Room</h3>
             </div>
             <div className="manual-join-section">
               <input
@@ -241,7 +249,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
                 className={`message-type-badge ${messageType === 'Hi' ? 'selected' : ''}`}
                 onClick={() => setMessageType('Hi')}
               >
-                Hi 👋
+                Hi 💬
               </button>
               <button
                 type="button"
@@ -274,7 +282,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
         </div>
       )}
       {resumeRoom && (
-        <div className="glass-modal-backdrop" onClick={() => setResumeRoom(null)}>
+        <div className="glass-modal-backdrop" onClick={closeResumeRoom}>
           <div className="glass-modal" onClick={event => event.stopPropagation()}>
             <div className="modal-header-row">
               <h3 className="modal-title">Active Room Found</h3>
@@ -286,9 +294,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
               <button
                 type="button"
                 className="modal-action-button cancel-button"
-                onClick={() => {
-                  setResumeRoom(null);
-                }}
+                onClick={closeResumeRoom}
               >
                 Cancel
               </button>

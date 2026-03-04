@@ -61,6 +61,15 @@ export const startMqttBroker = server =>
               guestId: payload.clientId || packet.clientId,
             });
           }
+          if (payload?.type === 'join' || payload?.type === 'leave') {
+            await insertRoomMessage({
+              topic: parsedTopic.roomTopic,
+              senderRole: payload?.senderRole,
+              senderId: payload?.senderId || payload?.clientId || packet.clientId,
+              text: payload?.type === 'leave' ? 'User left room.' : 'User joined room.',
+              payload: payload || {},
+            });
+          }
           return;
         }
 

@@ -8,6 +8,7 @@ import {
   getRoomByTopic,
   listActiveRooms,
   markRoomJoined,
+  terminateRoomByTopic,
 } from './roomService.js';
 
 export const createApp = () => {
@@ -75,6 +76,20 @@ export const createApp = () => {
 
       await markRoomJoined({ topic, guestId });
       res.json({ room });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/rooms/terminate', async (req, res) => {
+    try {
+      const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';
+      if (!topic) {
+        res.status(400).json({ message: 'topic is required' });
+        return;
+      }
+      await terminateRoomByTopic(topic);
+      res.json({ ok: true });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

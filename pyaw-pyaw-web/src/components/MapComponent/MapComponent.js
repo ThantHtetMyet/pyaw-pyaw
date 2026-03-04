@@ -30,7 +30,36 @@ function MapRecenter({ createdRoom, locatedPosition, searchedRooms }) {
   return null;
 }
 
-function createHandMarkerIcon(gender, messageType) {
+function MapResizeSync({ createdRoom, locatedPosition, searchedRoomsCount, isSearchingRooms }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const resizeMap = () => {
+      map.invalidateSize();
+    };
+    const resizeBurst = () => {
+      resizeMap();
+      window.requestAnimationFrame(() => {
+        resizeMap();
+      });
+      window.setTimeout(resizeMap, 180);
+    };
+    const timeoutId = window.setTimeout(resizeBurst, 80);
+    window.addEventListener('resize', resizeBurst);
+    window.addEventListener('orientationchange', resizeBurst);
+    window.addEventListener('pyaw-pyaw-layout-change', resizeBurst);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener('resize', resizeBurst);
+      window.removeEventListener('orientationchange', resizeBurst);
+      window.removeEventListener('pyaw-pyaw-layout-change', resizeBurst);
+    };
+  }, [map, createdRoom, locatedPosition, searchedRoomsCount, isSearchingRooms]);
+
+  return null;
+}
+
+function createMessageMarkerIcon(gender, messageType) {
   const isFemale = gender === 'Female';
   const genderClass = isFemale ? 'female' : 'male';
   const color = isFemale ? '#ff56aa' : '#38a8ff';
@@ -52,18 +81,17 @@ function createHandMarkerIcon(gender, messageType) {
     });
   }
 
-  const handPath = "M13,2.1v7h-1V3.1c0-0.62-0.5-1.1-1.1-1.1S9.8,2.48,9.8,3.1v6h-1V4.9c0-0.78-0.62-1.4-1.4-1.4S6,4.12,6,4.9v7.7l-0.9-0.2c-0.53-0.12-1.06,0.2-1.18,0.73c-0.04,0.2-0.02,0.41,0.05,0.6l1.28,3.94C5.68,19.1,6.82,20,8.1,20H16c1.66,0,3-1.34,3-3V9.9c0-0.78-0.62-1.4-1.4-1.4s-1.4,0.62-1.4,1.4v1.8h-1V4.2c0-0.62-0.5-1.1-1.1-1.1S13,3.58,13,4.2z";
+  const chatPath = "M4,5.5C4,4.12,5.12,3,6.5,3h11C18.88,3,20,4.12,20,5.5v7c0,1.38-1.12,2.5-2.5,2.5H11l-4.2,3.7c-0.74,0.65-1.9,0.12-1.9-0.86V15.2C4.37,14.76,4,14.17,4,13.5V5.5z";
 
   return L.divIcon({
     html: `<div class="user-hand-marker ${genderClass}">
             <div class="marker-pulse"></div>
             <div class="marker-hand-halo"></div>
-            <span class="marker-wave-line line-one"></span>
-            <span class="marker-wave-line line-two"></span>
-            <svg class="marker-hand-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="${handPath}" fill="${color}" stroke="#ffffff" stroke-width="1.1" stroke-linejoin="round" />
-              <path class="marker-finger-lines" d="M9.2 5.2V9.3M11 4.2V9.1M12.8 5V9.2M14.7 6.1V9.3" />
-              <path class="marker-palm-highlight" d="M8.2 12.2c0.9-0.5 2.2-0.8 3.6-0.8c1.5 0 2.9 0.3 4 0.9c0.3 0.2 0.5 0.6 0.3 0.9c-0.2 0.3-0.6 0.4-0.9 0.2c-0.8-0.5-2-0.7-3.4-0.7c-1.3 0-2.4 0.2-3.2 0.7c-0.3 0.2-0.7 0.1-0.9-0.2C7.8 12.8 7.9 12.4 8.2 12.2z" />
+            <svg class="marker-hand-svg chat-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="${chatPath}" fill="${color}" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+              <circle cx="9" cy="9.4" r="1.15" fill="#ffffff" />
+              <circle cx="12" cy="9.4" r="1.15" fill="#ffffff" />
+              <circle cx="15" cy="9.4" r="1.15" fill="#ffffff" />
             </svg>
            </div>`,
     className: 'user-hand-marker-wrapper',
@@ -83,6 +111,7 @@ function hashTopic(topic) {
 
 function MapComponent({
   createdRoom,
+  hostRoomTopic,
   locatedPosition,
   searchedRooms = [],
   isSearchingRooms,
@@ -90,13 +119,14 @@ function MapComponent({
   onDismissNoRoom,
   onCancelScan,
   onJoinRoom,
+  onOpenRoom,
 }) {
   const defaultPosition = [51.505, -0.09];
   const markerIcon = useMemo(() => {
     if (!createdRoom) {
       return null;
     }
-    return createHandMarkerIcon(createdRoom.gender, createdRoom.messageType);
+    return createMessageMarkerIcon(createdRoom.gender, createdRoom.messageType);
   }, [createdRoom]);
   const searchedRoomMarkers = useMemo(
     () =>
@@ -104,7 +134,7 @@ function MapComponent({
         .filter(room => Number.isFinite(room?.lat) && Number.isFinite(room?.lng))
         .map(room => ({
           ...room,
-          icon: createHandMarkerIcon(room.gender, room.messageType),
+          icon: createMessageMarkerIcon(room.gender, room.messageType),
         })),
     [searchedRooms]
   );
@@ -139,6 +169,8 @@ function MapComponent({
   );
   const [joiningTopic, setJoiningTopic] = useState('');
 
+  const isHostRoom = room => Boolean(room?.topic) && Boolean(hostRoomTopic) && room.topic === hostRoomTopic;
+
   const handleJoinFromMap = async room => {
     if (!room?.topic || joiningTopic) {
       return;
@@ -151,12 +183,26 @@ function MapComponent({
     }
   };
 
+  const handleRoomActionFromMap = room => {
+    if (isHostRoom(room)) {
+      onOpenRoom?.(room);
+      return;
+    }
+    handleJoinFromMap(room);
+  };
+
   return (
     <div className="map-stage">
       <MapContainer center={defaultPosition} zoom={13} style={{ height: '100vh', width: '100%' }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <MapResizeSync
+          createdRoom={createdRoom}
+          locatedPosition={locatedPosition}
+          searchedRoomsCount={searchedRoomMarkers.length}
+          isSearchingRooms={isSearchingRooms}
         />
         <MapRecenter createdRoom={createdRoom} locatedPosition={locatedPosition} searchedRooms={searchedRoomMarkers} />
         {locatedPosition && (
@@ -166,9 +212,16 @@ function MapComponent({
         )}
         {createdRoom && markerIcon && (
           <Marker position={[createdRoom.lat, createdRoom.lng]} icon={markerIcon}>
-            <Popup>
-              I am here
-              {createdRoom.message ? ` - ${createdRoom.message}` : ''}
+            <Popup className={`room-popup ${createdRoom.gender === 'Female' ? 'female' : 'male'}`}>
+              <div className="map-room-popup">
+                <div className="map-room-popup-header">
+                  <div className="map-room-popup-username">{createdRoom.username || 'You'}</div>
+                </div>
+                {createdRoom.message ? <div className="map-room-popup-message">{createdRoom.message}</div> : null}
+                <button type="button" className="map-room-popup-join-button" onClick={() => onOpenRoom?.(createdRoom)}>
+                  Connect
+                </button>
+              </div>
             </Popup>
           </Marker>
         )}
@@ -183,10 +236,10 @@ function MapComponent({
                 <button
                   type="button"
                   className="map-room-popup-join-button"
-                  onClick={() => handleJoinFromMap(room)}
-                  disabled={Boolean(joiningTopic)}
+                  onClick={() => handleRoomActionFromMap(room)}
+                  disabled={Boolean(joiningTopic) && !isHostRoom(room)}
                 >
-                  {joiningTopic === room.topic ? 'Joining...' : 'Join'}
+                  {isHostRoom(room) ? 'Connect' : joiningTopic === room.topic ? 'Joining...' : 'Join'}
                 </button>
               </div>
             </Popup>
