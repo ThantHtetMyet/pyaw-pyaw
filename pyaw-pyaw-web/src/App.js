@@ -348,6 +348,74 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     };
   }, [topic, role, sessionExpiresAt, username]);
 
+  useEffect(() => {
+    if (!isHostRole) {
+      return undefined;
+    }
+    const eventSource = new EventSource(`${apiBaseUrl}/api/rooms/stream`);
+    eventSource.onmessage = event => {
+      try {
+        const payload = JSON.parse(event.data || '{}');
+        if (payload?.topic !== topic || payload?.type !== 'availability') {
+          return;
+        }
+        if (payload?.availability === 'idle') {
+          setIsPeerJoined(false);
+          setShowChatInterface(false);
+        } else if (payload?.availability === 'busy') {
+          setIsPeerJoined(true);
+        }
+      } catch {
+      }
+    };
+    return () => {
+      eventSource.close();
+    };
+  }, [isHostRole, topic]);
+
+  const notifyGuestLeaveApi = useCallback(async () => {
+    if (isHostRole) {
+      return;
+    }
+    try {
+      await requestJson('/api/rooms/leave', {
+        method: 'POST',
+        body: JSON.stringify({
+          topic,
+          guestId: clientIdRef.current,
+        }),
+      });
+    } catch {
+    }
+  }, [isHostRole, topic]);
+
+  useEffect(() => {
+    if (isHostRole) {
+      return undefined;
+    }
+    const handleBeforeUnload = () => {
+      const url = `${apiBaseUrl}/api/rooms/leave`;
+      const payload = JSON.stringify({
+        topic,
+        guestId: clientIdRef.current,
+      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+        return;
+      }
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isHostRole, topic]);
+
   const handleSendMessage = () => {
     const messageText = inputValue.trim();
     if (!messageText || !mqttClientRef.current?.connected || isChatLocked) {
@@ -435,6 +503,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           senderName: username,
         })
       );
+      await notifyGuestLeaveApi();
     }
     if (isHost) {
       try {

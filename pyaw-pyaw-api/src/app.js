@@ -8,6 +8,7 @@ import {
   getRoomByTopic,
   listActiveRooms,
   markRoomJoined,
+  markRoomLeft,
   terminateRoomByTopic,
 } from './roomService.js';
 import { publishRoomEvent, subscribeRoomEvents } from './roomEvents.js';
@@ -87,6 +88,30 @@ export const createApp = () => {
         availability: 'busy',
       });
       res.json({ room });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/rooms/leave', async (req, res) => {
+    try {
+      const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';
+      const guestId = typeof req.body?.guestId === 'string' ? req.body.guestId : null;
+      if (!topic) {
+        res.status(400).json({ message: 'topic is required' });
+        return;
+      }
+      if (!guestId) {
+        res.status(400).json({ message: 'guestId is required' });
+        return;
+      }
+      await markRoomLeft({ topic, guestId });
+      publishRoomEvent({
+        type: 'availability',
+        topic,
+        availability: 'idle',
+      });
+      res.json({ ok: true });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
