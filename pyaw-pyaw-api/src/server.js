@@ -9,7 +9,7 @@ const bootstrap = async () => {
   const app = createApp();
   const httpServer = createServer(app);
   const mqttServer = await startMqttBroker(httpServer);
-  httpServer.listen(config.port, () => {
+  httpServer.listen(config.port, '0.0.0.0', () => {
     console.log(`HTTP API listening on port ${config.port}`);
     console.log(`MQTT over WebSocket listening on /mqtt via port ${config.port}`);
   });
