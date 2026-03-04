@@ -61,6 +61,49 @@ function getOrCreateClientId() {
   return nextId;
 }
 
+function buildHostIdPayload(hostId, roomData) {
+  if (!hostId) {
+    return hostId;
+  }
+  const metadata = {
+    lat: roomData?.lat,
+    lng: roomData?.lng,
+    gender: roomData?.gender === 'Female' ? 'Female' : 'Male',
+  };
+  if (!Number.isFinite(metadata.lat) || !Number.isFinite(metadata.lng)) {
+    return hostId;
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(metadata));
+  const encoded = window.btoa(String.fromCharCode(...bytes));
+  return `${hostId}::meta::${encoded}`;
+}
+
+function readHostIdPayload(hostId) {
+  if (typeof hostId !== 'string') {
+    return null;
+  }
+  const [, encoded] = hostId.split('::meta::');
+  if (!encoded) {
+    return null;
+  }
+  try {
+    const binary = window.atob(encoded);
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    const decoded = new TextDecoder().decode(bytes);
+    const parsed = JSON.parse(decoded);
+    if (!Number.isFinite(parsed?.lat) || !Number.isFinite(parsed?.lng)) {
+      return null;
+    }
+    return {
+      lat: parsed.lat,
+      lng: parsed.lng,
+      gender: parsed.gender === 'Female' ? 'Female' : 'Male',
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 function RoomTab({ topic, role, sessionExpiresAt }) {
   const [isPeerJoined, setIsPeerJoined] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -288,6 +331,8 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
 function App() {
   const [createdRoom, setCreatedRoom] = useState(null);
   const [locatedPosition, setLocatedPosition] = useState(null);
+  const [searchedRooms, setSearchedRooms] = useState([]);
+  const [isSearchingRooms, setIsSearchingRooms] = useState(false);
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const roomTopicFromUrl = searchParams.get('roomTopic');
   const roomRole = searchParams.get('role') === 'host' ? 'host' : 'guest';
@@ -298,11 +343,12 @@ function App() {
 
   const handleCreateRoom = async roomData => {
     try {
+      const hostId = getOrCreateClientId();
       const response = await requestJson('/api/rooms', {
         method: 'POST',
         body: JSON.stringify({
           message: roomData.message || '',
-          hostId: getOrCreateClientId(),
+          hostId: buildHostIdPayload(hostId, roomData),
         }),
       });
       const room = response?.room;
@@ -321,12 +367,26 @@ function App() {
   };
 
   const handleSearchRooms = async () => {
-    const response = await requestJson('/api/rooms/active');
-    return (response?.rooms || []).map(room => ({
-      topic: room.topic,
-      message: room.message || '',
-      sessionExpiresAt: parseExpiresAt(room.expiresAt),
-    }));
+    setIsSearchingRooms(true);
+    try {
+      const response = await requestJson('/api/rooms/active');
+      const mappedRooms = (response?.rooms || [])
+        .map(room => {
+          const metadata = readHostIdPayload(room.hostId);
+          return {
+            topic: room.topic,
+            message: room.message || '',
+            sessionExpiresAt: parseExpiresAt(room.expiresAt),
+            lat: metadata?.lat,
+            lng: metadata?.lng,
+            gender: metadata?.gender || 'Male',
+          };
+        });
+      setSearchedRooms(mappedRooms.filter(room => Number.isFinite(room.lat) && Number.isFinite(room.lng)));
+      return mappedRooms;
+    } finally {
+      setIsSearchingRooms(false);
+    }
   };
 
   const handleJoinRoom = async room => {
@@ -367,7 +427,12 @@ function App() {
 
   return (
     <div className="App">
-      <MapComponent createdRoom={createdRoom} locatedPosition={locatedPosition} />
+      <MapComponent
+        createdRoom={createdRoom}
+        locatedPosition={locatedPosition}
+        searchedRooms={searchedRooms}
+        isSearchingRooms={isSearchingRooms}
+      />
       <MenuButton
         onCreateRoom={handleCreateRoom}
         onSearchRooms={handleSearchRooms}

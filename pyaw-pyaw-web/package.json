@@ -20,8 +20,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "predeploy": "node -e \"require('fs').rmSync('node_modules/.cache/gh-pages',{ recursive: true, force: true })\" && npm run build",
-    "deploy": "gh-pages -b gh-pages -d build",
+    "predeploy": "node -e \"const fs=require('fs');try{fs.rmSync('node_modules/.cache/gh-pages',{recursive:true,force:true});}catch(error){if(error.code!=='EPERM'&&error.code!=='ENOENT'){throw error;}}\" && npm run build",
+    "deploy": "gh-pages -b gh-pages -d build -r https://github.com/ThantHtetMyet/pyaw-pyaw.git",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

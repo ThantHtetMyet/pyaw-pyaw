@@ -31,6 +31,47 @@ code {
   box-shadow: 0 0 0 8px rgba(56, 168, 255, 0.2);
 }
 
+.map-stage {
+  position: relative;
+}
+
+.search-radar-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 600;
+}
+
+.search-radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(120, 205, 255, 0.65);
+  animation: radarExpand 1.7s ease-out infinite;
+}
+
+.search-radar-ring.ring-one {
+  animation-delay: 0s;
+}
+
+.search-radar-ring.ring-two {
+  animation-delay: 0.45s;
+}
+
+.search-radar-ring.ring-three {
+  animation-delay: 0.9s;
+}
+
+.search-radar-core {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #7ad6ff;
+  box-shadow: 0 0 0 6px rgba(122, 214, 255, 0.25);
+}
+
 .user-hand-marker {
   position: relative;
   width: 56px;
@@ -94,6 +135,19 @@ code {
   }
   50% {
     transform: translateY(-8px);
+  }
+}
+
+@keyframes radarExpand {
+  0% {
+    width: 34px;
+    height: 34px;
+    opacity: 0.82;
+  }
+  100% {
+    width: 220px;
+    height: 220px;
+    opacity: 0;
   }
 }
 
