@@ -1,25 +1,26 @@
 import React from 'react';
 
-function InfoModal({ message, onClose }) {
-  if (!message) {
-    return null;
-  }
+const InfoModal = ({ isOpen, onClose, title = 'Notification', message, buttonText = 'OK' }) => {
+  // If message is empty string, we treat it as closed, unless isOpen is explicitly true?
+  // The App.js usage is <InfoModal message={modalMessage} ... /> where modalMessage is '' initially.
+  // So we should check if message is truthy.
+  if (!message) return null;
 
   return (
-    <div className="no-room-overlay" onClick={onClose}>
-      <div className="no-room-panel" onClick={event => event.stopPropagation()}>
-        <div className="no-room-header">
-          <button type="button" className="no-room-close-button" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+    <div className="glass-modal-backdrop" onClick={onClose}>
+      <div className="glass-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header-row">
+          <h3 className="modal-title">{title}</h3>
         </div>
-        <div className="no-room-body">
-          <div className="no-room-icon">⚠️</div>
-          <div className="no-room-text">{message}</div>
+        <p className="modal-description">{message}</p>
+        <div className="modal-action-row" style={{ justifyContent: 'center' }}>
+          <button className="modal-action-button create-button" onClick={onClose}>
+            {buttonText}
+          </button>
         </div>
       </div>
     </div>
   );
-}
+};
 
 export default InfoModal;

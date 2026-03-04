@@ -401,6 +401,15 @@ function App() {
       }
       const expiresAt = parseExpiresAt(room.expiresAt);
       setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt });
+      
+      const activeRoomData = {
+        topic: room.topic,
+        role: 'host',
+        sessionExpiresAt: expiresAt,
+        username: roomData.username || '',
+      };
+      window.localStorage.setItem('pyaw-pyaw-active-room', JSON.stringify(activeRoomData));
+
       const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
         room.topic
       )}&role=host&sessionExpiresAt=${expiresAt}&username=${encodeURIComponent(roomData.username || '')}`;

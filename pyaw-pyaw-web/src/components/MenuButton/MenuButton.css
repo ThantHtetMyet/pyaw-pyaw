@@ -172,48 +172,8 @@
   }
 }
 
-.glass-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  background: rgba(10, 12, 20, 0.3);
-  backdrop-filter: blur(3px);
-  display: flex;
-  padding: 16px;
-  justify-content: center;
-  align-items: center;
-}
+/* Modal styles moved to index.css */
 
-.glass-modal {
-  width: min(460px, 100%);
-  max-height: calc(100dvh - 32px);
-  overflow: auto;
-  padding: 18px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
-  box-shadow: 0 14px 36px rgba(5, 8, 15, 0.35);
-  backdrop-filter: blur(10px);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.modal-header-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
-}
-
-.modal-title {
-  margin: 0;
-  color: #ffffff;
-  font-size: 1.2rem;
-  font-weight: 700;
-  text-align: center;
-}
 
 .gender-row {
   display: flex;
@@ -279,101 +239,18 @@
   color: #ffd6db;
 }
 
-.modal-action-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
+/* Action buttons moved to index.css */
 
-.modal-action-button {
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 10px;
-  padding: 8px 16px;
-  font: inherit;
-  font-weight: 600;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.12);
-  cursor: pointer;
-}
 
-.modal-action-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
+/* Search list styles removed (unused) */
 
-.create-button {
-  background: linear-gradient(135deg, rgba(122, 107, 255, 0.75), rgba(56, 168, 255, 0.72));
-  border-color: rgba(170, 190, 255, 0.65);
-}
 
-.search-modal {
-  width: min(560px, 100%);
-}
+/* Manual join styles moved to index.css */
 
-.search-room-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.search-room-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(8, 10, 15, 0.35);
-  border-radius: 12px;
-  padding: 10px;
-}
-
-.search-room-text {
-  color: #ffffff;
-  line-height: 1.3;
-  word-break: break-word;
-}
-
-.search-empty {
-  color: rgba(255, 255, 255, 0.75);
-}
-
-.manual-join-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.manual-join-input {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(8, 10, 15, 0.5);
-  color: #ffffff;
-  padding: 10px 12px;
-  font: inherit;
-  outline: none;
-}
-
-.manual-join-input::placeholder {
-  color: rgba(255, 255, 255, 0.56);
-}
 
 @media (max-width: 768px) {
-  .glass-modal-backdrop {
-    align-items: flex-start;
-    padding: max(10px, env(safe-area-inset-top)) 10px 14px;
-  }
+  /* Modal media queries moved to index.css */
 
-  .glass-modal {
-    max-height: calc(100dvh - 24px);
-    padding: 14px;
-    border-radius: 14px;
-    gap: 12px;
-  }
-
-  .modal-title {
-    font-size: 1.05rem;
-  }
 
   .gender-row {
     gap: 18px;
@@ -384,16 +261,9 @@
     min-height: 96px;
   }
 
-  .modal-action-row {
-    justify-content: stretch;
-  }
+  /* Modal action buttons media query moved to index.css */
 
-  .modal-action-button {
-    flex: 1;
-  }
 
-  .search-room-item {
-    flex-direction: column;
-    align-items: stretch;
-  }
+/* Search item media query removed */
+
 }

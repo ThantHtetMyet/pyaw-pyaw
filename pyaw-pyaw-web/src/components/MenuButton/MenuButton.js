@@ -10,6 +10,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [resumeRoom, setResumeRoom] = useState(null);
   const containerRef = useRef(null);
   
   useEffect(() => {
@@ -38,9 +39,36 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
   const handleCreateClick = () => {
     setIsOpen(false);
     setLocationError('');
+
+    const activeRoomJson = window.localStorage.getItem('pyaw-pyaw-active-room');
+    if (activeRoomJson) {
+      try {
+        const activeRoom = JSON.parse(activeRoomJson);
+        if (activeRoom && activeRoom.sessionExpiresAt > Date.now()) {
+          setResumeRoom(activeRoom);
+          return;
+        } else {
+          window.localStorage.removeItem('pyaw-pyaw-active-room');
+        }
+      } catch (e) {
+        window.localStorage.removeItem('pyaw-pyaw-active-room');
+      }
+    }
+
     setIsCreateModalOpen(true);
     setUsername('');
     setFreeText('');
+  };
+
+  const handleResumeRoom = () => {
+    if (!resumeRoom) return;
+    
+    const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
+      resumeRoom.topic
+    )}&role=${resumeRoom.role}&sessionExpiresAt=${resumeRoom.sessionExpiresAt}&username=${encodeURIComponent(resumeRoom.username || '')}`;
+    
+    window.open(roomUrl, '_blank', 'noopener,noreferrer');
+    setResumeRoom(null);
   };
 
   const handleCloseModal = () => {
@@ -226,6 +254,43 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
                 disabled={isGettingLocation}
               >
                 {isGettingLocation ? 'Getting Location...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {resumeRoom && (
+        <div className="glass-modal-backdrop" onClick={() => setResumeRoom(null)}>
+          <div className="glass-modal" onClick={event => event.stopPropagation()}>
+            <div className="modal-header-row">
+              <h3 className="modal-title">Active Room Found</h3>
+            </div>
+            <div className="manual-join-section">
+              <p className="modal-description">You already have an active room. Would you like to resume it?</p>
+              <div className="active-room-info">
+                <strong>Topic:</strong> {resumeRoom.topic}
+              </div>
+            </div>
+            <div className="modal-action-row">
+              <button
+                type="button"
+                className="modal-action-button cancel-button"
+                onClick={() => {
+                  window.localStorage.removeItem('pyaw-pyaw-active-room');
+                  setResumeRoom(null);
+                  setIsCreateModalOpen(true);
+                  setUsername('');
+                  setFreeText('');
+                }}
+              >
+                Create New
+              </button>
+              <button
+                type="button"
+                className="modal-action-button create-button"
+                onClick={handleResumeRoom}
+              >
+                Resume Room
               </button>
             </div>
           </div>
