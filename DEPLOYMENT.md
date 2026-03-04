@@ -56,4 +56,4 @@ This API can run on any Node.js host that supports WebSocket upgrades.
 
 ## Frontend API Integration
 
-Set your web app API base URL to the deployed API URL so room search and joins use the global backend.
+Set `REACT_APP_API_BASE_URL` in `pyaw-pyaw-web/.env` to your deployed API URL, then run `npm run build` and `npm run deploy` again.

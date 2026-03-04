@@ -12,6 +12,8 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
   const [freeText, setFreeText] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [isSearchingRooms, setIsSearchingRooms] = useState(false);
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [locationError, setLocationError] = useState('');
   const containerRef = useRef(null);
   
@@ -49,13 +51,21 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
     setIsCreateModalOpen(false);
   };
 
-  const handleSearchClick = () => {
-    const rooms = onSearchRooms?.() || [];
-    setSearchedRooms(rooms);
-    setManualJoinValue('');
-    setSearchError('');
+  const handleSearchClick = async () => {
     setIsOpen(false);
     setIsSearchModalOpen(true);
+    setManualJoinValue('');
+    setSearchError('');
+    setIsSearchingRooms(true);
+    try {
+      const rooms = await onSearchRooms?.();
+      setSearchedRooms(Array.isArray(rooms) ? rooms : []);
+    } catch (error) {
+      setSearchedRooms([]);
+      setSearchError(error?.message || 'Unable to load active rooms.');
+    } finally {
+      setIsSearchingRooms(false);
+    }
   };
 
   const handleCloseSearchModal = () => {
@@ -64,11 +74,19 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
     setIsSearchModalOpen(false);
   };
 
-  const handleJoinRoom = room => {
-    onJoinRoom?.(room);
-    setManualJoinValue('');
-    setSearchError('');
-    setIsSearchModalOpen(false);
+  const handleJoinRoom = async room => {
+    setIsJoiningRoom(true);
+    try {
+      const joined = await onJoinRoom?.(room);
+      if (joined === false) {
+        return;
+      }
+      setManualJoinValue('');
+      setSearchError('');
+      setIsSearchModalOpen(false);
+    } finally {
+      setIsJoiningRoom(false);
+    }
   };
 
   const parseJoinPayload = rawValue => {
@@ -113,14 +131,14 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
     };
   };
 
-  const handleManualJoin = () => {
+  const handleManualJoin = async () => {
     const room = parseJoinPayload(manualJoinValue);
     if (!room) {
       setSearchError('Paste a valid room link or room topic.');
       return;
     }
     setSearchError('');
-    handleJoinRoom(room);
+    await handleJoinRoom(room);
   };
 
   const handleLocateClick = () => {
@@ -288,11 +306,17 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
               <h3 className="modal-title">Active Rooms</h3>
             </div>
             <div className="search-room-list">
-              {searchedRooms.length === 0 && <div className="search-empty">No active room found in this browser.</div>}
+              {isSearchingRooms && <div className="search-empty">Loading active rooms...</div>}
+              {!isSearchingRooms && searchedRooms.length === 0 && <div className="search-empty">No active room found right now.</div>}
               {searchedRooms.map(room => (
                 <div className="search-room-item" key={room.topic}>
                   <div className="search-room-text">{room.message || 'No shared message.'}</div>
-                  <button type="button" className="modal-action-button create-button" onClick={() => handleJoinRoom(room)}>
+                  <button
+                    type="button"
+                    className="modal-action-button create-button"
+                    onClick={() => handleJoinRoom(room)}
+                    disabled={isJoiningRoom}
+                  >
                     Join
                   </button>
                 </div>
@@ -309,7 +333,12 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
               {searchError && <div className="location-error">{searchError}</div>}
             </div>
             <div className="modal-action-row">
-              <button type="button" className="modal-action-button create-button" onClick={handleManualJoin}>
+              <button
+                type="button"
+                className="modal-action-button create-button"
+                onClick={handleManualJoin}
+                disabled={isJoiningRoom}
+              >
                 Join by Link
               </button>
               <button type="button" className="modal-action-button cancel-button" onClick={handleCloseSearchModal}>

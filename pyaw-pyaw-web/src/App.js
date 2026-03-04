@@ -1,39 +1,64 @@
+import mqtt from 'mqtt';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
 
-const ROOM_REGISTRY_KEY = 'pyaw-pyaw-active-rooms';
+const DEFAULT_SESSION_MS = 5 * 60 * 1000;
+const DEFAULT_API_BASE_URL = 'https://pyaw-pyaw-api.onrender.com';
+const CLIENT_ID_KEY = 'pyaw-pyaw-client-id';
 
-function buildRoomTopic() {
-  return `room/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+function normalizeBaseUrl(urlText) {
+  return (urlText || '').trim().replace(/\/+$/, '');
 }
 
-function readActiveRooms() {
-  const registryText = window.localStorage.getItem(ROOM_REGISTRY_KEY);
-  if (!registryText) {
-    return [];
+function resolveApiBaseUrl() {
+  const configured = normalizeBaseUrl(process.env.REACT_APP_API_BASE_URL);
+  if (configured) {
+    return configured;
+  }
+  const { hostname } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:4000';
+  }
+  return DEFAULT_API_BASE_URL;
+}
+
+const apiBaseUrl = resolveApiBaseUrl();
+
+async function requestJson(path, options = {}) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: options.method || 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+    body: options.body,
+  });
+
+  const payload = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload?.message || `Request failed: ${response.status}`);
   }
 
-  try {
-    const parsedRooms = JSON.parse(registryText);
-    if (!Array.isArray(parsedRooms)) {
-      return [];
-    }
-    const now = Date.now();
-    return parsedRooms.filter(room => room && room.topic && room.sessionExpiresAt > now);
-  } catch (error) {
-    return [];
+  return payload;
+}
+
+function parseExpiresAt(value) {
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : Date.now() + DEFAULT_SESSION_MS;
+}
+
+function getOrCreateClientId() {
+  const existing = window.localStorage.getItem(CLIENT_ID_KEY);
+  if (existing) {
+    return existing;
   }
-}
-
-function writeActiveRooms(rooms) {
-  window.localStorage.setItem(ROOM_REGISTRY_KEY, JSON.stringify(rooms));
-}
-
-function upsertActiveRoom(newRoom) {
-  const currentRooms = readActiveRooms();
-  const nextRooms = [newRoom, ...currentRooms.filter(room => room.topic !== newRoom.topic)];
-  writeActiveRooms(nextRooms);
+  const nextId = `web-${Math.random().toString(36).slice(2, 10)}`;
+  window.localStorage.setItem(CLIENT_ID_KEY, nextId);
+  return nextId;
 }
 
 function RoomTab({ topic, role, sessionExpiresAt }) {
@@ -41,11 +66,13 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [transportError, setTransportError] = useState('');
+  const [isConnecting, setIsConnecting] = useState(true);
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
     Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000))
   );
-  const channelRef = useRef(null);
-  const clientIdRef = useRef(Math.random().toString(36).slice(2, 10));
+  const mqttClientRef = useRef(null);
+  const clientIdRef = useRef(getOrCreateClientId());
+  const hasSeenPeerRef = useRef(false);
   const isExpired = remainingSeconds <= 0;
 
   useEffect(() => {
@@ -57,67 +84,142 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
   }, [sessionExpiresAt]);
 
   useEffect(() => {
-    if (!window.BroadcastChannel) {
-      setTransportError('BroadcastChannel is not supported in this browser.');
-      return undefined;
-    }
+    let isUnmounted = false;
+    let mqttClient;
 
-    const channel = new BroadcastChannel(`pyaw-pyaw-room-${topic}`);
-    channelRef.current = channel;
+    const setupMqtt = async () => {
+      try {
+        setTransportError('');
+        setIsConnecting(true);
+        hasSeenPeerRef.current = false;
+        const mqttConfig = await requestJson('/api/mqtt/config');
+        if (isUnmounted) {
+          return;
+        }
 
-    channel.onmessage = event => {
-      const payload = event.data;
-      if (!payload || payload.senderId === clientIdRef.current) {
-        return;
-      }
+        const wsUrl = `${mqttConfig.protocol}://${mqttConfig.host}${mqttConfig.path}`;
+        const roomChannels = [`${topic}/presence`, `${topic}/chat`];
 
-      if (Date.now() >= sessionExpiresAt) {
-        return;
-      }
+        mqttClient = mqtt.connect(wsUrl, {
+          clientId: clientIdRef.current,
+          reconnectPeriod: 2000,
+          connectTimeout: 10000,
+          clean: true,
+        });
 
-      if (payload.type === 'join-request' && role === 'host') {
-        setIsPeerJoined(true);
-        channel.postMessage({ type: 'join-ack', senderId: clientIdRef.current });
-        return;
-      }
+        mqttClientRef.current = mqttClient;
 
-      if (payload.type === 'join-ack') {
-        setIsPeerJoined(true);
-        return;
-      }
+        mqttClient.on('connect', () => {
+          if (isUnmounted) {
+            return;
+          }
+          setTransportError('');
+          setIsConnecting(false);
+          mqttClient.subscribe(roomChannels, subscribeError => {
+            if (subscribeError) {
+              setTransportError(subscribeError.message || 'Failed to subscribe room channels.');
+              return;
+            }
+            mqttClient.publish(
+              `${topic}/presence`,
+              JSON.stringify({
+                type: 'join',
+                clientId: clientIdRef.current,
+                senderId: clientIdRef.current,
+                senderRole: role,
+              })
+            );
+          });
+        });
 
-      if (payload.type === 'chat-message') {
-        setMessages(prevMessages => [
-          ...prevMessages,
-          { sender: payload.senderRole === 'host' ? 'Host' : 'Guest', text: payload.text },
-        ]);
+        mqttClient.on('reconnect', () => {
+          if (!isUnmounted) {
+            setIsConnecting(true);
+          }
+        });
+
+        mqttClient.on('message', (messageTopic, messageBuffer) => {
+          if (Date.now() >= sessionExpiresAt) {
+            return;
+          }
+
+          const payloadText = messageBuffer.toString('utf8');
+          let payload;
+          try {
+            payload = JSON.parse(payloadText);
+          } catch (error) {
+            payload = { text: payloadText };
+          }
+
+          const senderId = payload?.senderId || payload?.clientId;
+          if (senderId && senderId === clientIdRef.current) {
+            return;
+          }
+
+          if (messageTopic.endsWith('/presence')) {
+            setIsPeerJoined(true);
+            if (!hasSeenPeerRef.current && mqttClient.connected) {
+              hasSeenPeerRef.current = true;
+              mqttClient.publish(
+                `${topic}/presence`,
+                JSON.stringify({
+                  type: 'join',
+                  clientId: clientIdRef.current,
+                  senderId: clientIdRef.current,
+                  senderRole: role,
+                })
+              );
+            }
+            return;
+          }
+
+          if (messageTopic.endsWith('/chat')) {
+            const text = typeof payload?.text === 'string' ? payload.text : payloadText;
+            setIsPeerJoined(true);
+            setMessages(prevMessages => [
+              ...prevMessages,
+              { sender: payload?.senderRole === 'host' ? 'Host' : 'Guest', text },
+            ]);
+          }
+        });
+
+        mqttClient.on('error', error => {
+          if (!isUnmounted) {
+            setTransportError(error.message || 'MQTT connection failed.');
+          }
+        });
+      } catch (error) {
+        if (!isUnmounted) {
+          setTransportError(error.message || 'Unable to initialize realtime connection.');
+          setIsConnecting(false);
+        }
       }
     };
 
-    if (role === 'guest') {
-      channel.postMessage({ type: 'join-request', senderId: clientIdRef.current });
-    }
-
+    setupMqtt();
     return () => {
-      channel.close();
-      channelRef.current = null;
+      isUnmounted = true;
+      if (mqttClient) {
+        mqttClient.end(true);
+      }
+      mqttClientRef.current = null;
     };
   }, [topic, role, sessionExpiresAt]);
 
   const handleSendMessage = () => {
     const messageText = inputValue.trim();
-    if (!messageText || !channelRef.current || isExpired) {
+    if (!messageText || !mqttClientRef.current?.connected || isExpired) {
       return;
     }
 
-    const payload = {
-      type: 'chat-message',
+    const payload = JSON.stringify({
+      type: 'chat',
       senderId: clientIdRef.current,
       senderRole: role,
       text: messageText,
-    };
+    });
 
-    channelRef.current.postMessage(payload);
+    mqttClientRef.current.publish(`${topic}/chat`, payload);
     setMessages(prevMessages => [...prevMessages, { sender: role === 'host' ? 'Host' : 'Guest', text: messageText }]);
     setInputValue('');
   };
@@ -145,7 +247,11 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
               <span />
             </div>
             <div className="room-status">
-              {role === 'host' ? 'Waiting for someone to join this room...' : 'Connecting to host...'}
+              {isConnecting
+                ? 'Connecting to realtime server...'
+                : role === 'host'
+                  ? 'Waiting for someone to join this room...'
+                  : 'Connecting to host...'}
             </div>
           </div>
         )}
@@ -188,38 +294,64 @@ function App() {
   const sessionExpiresAtParam = Number(searchParams.get('sessionExpiresAt'));
   const sessionExpiresAt = Number.isFinite(sessionExpiresAtParam) && sessionExpiresAtParam > 0
     ? sessionExpiresAtParam
-    : Date.now() + 5 * 60 * 1000;
+    : Date.now() + DEFAULT_SESSION_MS;
 
-  const handleCreateRoom = roomData => {
-    const topic = buildRoomTopic();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-    upsertActiveRoom({
-      topic,
-      message: roomData.message || '',
-      createdAt: Date.now(),
-      sessionExpiresAt: expiresAt,
-    });
-    setCreatedRoom({ ...roomData, topic, sessionExpiresAt: expiresAt });
-    const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
-      topic
-    )}&role=host&sessionExpiresAt=${expiresAt}`;
-    window.open(roomUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleSearchRooms = () => {
-    const rooms = readActiveRooms();
-    writeActiveRooms(rooms);
-    return rooms;
-  };
-
-  const handleJoinRoom = room => {
-    if (!room?.topic || !room?.sessionExpiresAt) {
-      return;
+  const handleCreateRoom = async roomData => {
+    try {
+      const response = await requestJson('/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: roomData.message || '',
+          hostId: getOrCreateClientId(),
+        }),
+      });
+      const room = response?.room;
+      if (!room?.topic) {
+        throw new Error('Room creation failed.');
+      }
+      const expiresAt = parseExpiresAt(room.expiresAt);
+      setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt });
+      const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
+        room.topic
+      )}&role=host&sessionExpiresAt=${expiresAt}`;
+      window.open(roomUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      window.alert(error.message || 'Unable to create room.');
     }
-    const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
-      room.topic
-    )}&role=guest&sessionExpiresAt=${room.sessionExpiresAt}`;
-    window.open(roomUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleSearchRooms = async () => {
+    const response = await requestJson('/api/rooms/active');
+    return (response?.rooms || []).map(room => ({
+      topic: room.topic,
+      message: room.message || '',
+      sessionExpiresAt: parseExpiresAt(room.expiresAt),
+    }));
+  };
+
+  const handleJoinRoom = async room => {
+    if (!room?.topic || !room?.sessionExpiresAt) {
+      return false;
+    }
+    try {
+      const response = await requestJson('/api/rooms/join', {
+        method: 'POST',
+        body: JSON.stringify({
+          topic: room.topic,
+          guestId: getOrCreateClientId(),
+        }),
+      });
+      const joinedRoom = response?.room;
+      const expiresAt = parseExpiresAt(joinedRoom?.expiresAt || room.sessionExpiresAt);
+      const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
+        room.topic
+      )}&role=guest&sessionExpiresAt=${expiresAt}`;
+      window.open(roomUrl, '_blank', 'noopener,noreferrer');
+      return true;
+    } catch (error) {
+      window.alert(error.message || 'Unable to join room.');
+      return false;
+    }
   };
 
   const handleLocate = position => {
