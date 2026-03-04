@@ -44,7 +44,7 @@ code {
   display: flex;
   justify-content: center;
   align-items: center;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .scan-modal-panel {
@@ -90,6 +90,27 @@ code {
   width: 96px;
   height: 96px;
   animation-delay: 0.26s;
+}
+
+.scan-modal-header {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.scan-modal-close-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background: rgba(8, 10, 15, 0.36);
+  color: #ffffff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 @keyframes scanDotBlink {

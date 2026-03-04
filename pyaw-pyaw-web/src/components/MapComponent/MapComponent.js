@@ -56,6 +56,7 @@ function MapComponent({
   isSearchingRooms,
   showNoRoomFound = false,
   onDismissNoRoom,
+  onCancelScan,
 }) {
   const defaultPosition = [51.505, -0.09];
   const markerIcon = useMemo(() => {
@@ -137,6 +138,11 @@ function MapComponent({
       {isSearchingRooms && (
         <div className="scan-modal-backdrop">
           <div className="scan-modal-panel">
+            <div className="scan-modal-header">
+              <button type="button" className="scan-modal-close-button" onClick={onCancelScan} aria-label="Stop scan">
+                ×
+              </button>
+            </div>
             <div className="scan-radar">
               <div className="scan-radar-circle circle-one" />
               <div className="scan-radar-circle circle-two" />

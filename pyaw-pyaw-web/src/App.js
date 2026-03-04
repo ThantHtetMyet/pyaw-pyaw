@@ -336,6 +336,7 @@ function App() {
   const [isSearchingRooms, setIsSearchingRooms] = useState(false);
   const [scanResult, setScanResult] = useState('idle');
   const [isNoRoomVisible, setIsNoRoomVisible] = useState(false);
+  const activeScanIdRef = useRef(0);
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const roomTopicFromUrl = searchParams.get('roomTopic');
   const roomRole = searchParams.get('role') === 'host' ? 'host' : 'guest';
@@ -370,6 +371,8 @@ function App() {
   };
 
   const handleSearchRooms = async () => {
+    const scanId = activeScanIdRef.current + 1;
+    activeScanIdRef.current = scanId;
     const startedAt = Date.now();
     setScanResult('idle');
     setIsNoRoomVisible(false);
@@ -388,6 +391,9 @@ function App() {
             gender: metadata?.gender || 'Male',
           };
         });
+      if (activeScanIdRef.current !== scanId) {
+        return [];
+      }
       const nextResult = mappedRooms.length > 0 ? 'found' : 'empty';
       setScanResult(nextResult);
       setIsNoRoomVisible(nextResult === 'empty');
@@ -395,10 +401,12 @@ function App() {
       return mappedRooms;
     } finally {
       const elapsed = Date.now() - startedAt;
-      if (elapsed < MIN_SCAN_VISIBILITY_MS) {
+      if (elapsed < MIN_SCAN_VISIBILITY_MS && activeScanIdRef.current === scanId) {
         await new Promise(resolve => window.setTimeout(resolve, MIN_SCAN_VISIBILITY_MS - elapsed));
       }
-      setIsSearchingRooms(false);
+      if (activeScanIdRef.current === scanId) {
+        setIsSearchingRooms(false);
+      }
     }
   };
 
@@ -438,6 +446,13 @@ function App() {
     setIsNoRoomVisible(false);
   };
 
+  const handleCancelScan = () => {
+    activeScanIdRef.current += 1;
+    setIsSearchingRooms(false);
+    setScanResult('idle');
+    setIsNoRoomVisible(false);
+  };
+
   if (roomTopicFromUrl) {
     return <RoomTab topic={roomTopicFromUrl} role={roomRole} sessionExpiresAt={sessionExpiresAt} />;
   }
@@ -451,6 +466,7 @@ function App() {
         isSearchingRooms={isSearchingRooms}
         showNoRoomFound={!isSearchingRooms && scanResult === 'empty' && isNoRoomVisible}
         onDismissNoRoom={handleDismissNoRoom}
+        onCancelScan={handleCancelScan}
       />
       <MenuButton
         onCreateRoom={handleCreateRoom}
