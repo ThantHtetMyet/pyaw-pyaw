@@ -11,6 +11,7 @@ const toRoomDto = row => ({
   topic: row.topic,
   message: row.message || '',
   hostId: row.host_id,
+  lastGuestId: row.last_guest_id,
   createdAt: row.created_at,
   expiresAt: row.expires_at,
   status: row.status,

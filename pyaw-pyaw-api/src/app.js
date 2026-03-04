@@ -57,11 +57,19 @@ export const createApp = () => {
         res.status(400).json({ message: 'topic is required' });
         return;
       }
+      if (!guestId) {
+        res.status(400).json({ message: 'guestId is required' });
+        return;
+      }
 
       await expireOldRooms();
       const room = await getRoomByTopic(topic);
       if (!room || room.status !== 'active' || Date.parse(room.expiresAt) <= Date.now()) {
         res.status(404).json({ message: 'room not found or expired' });
+        return;
+      }
+      if (room.lastGuestId && room.lastGuestId !== guestId) {
+        res.status(409).json({ message: 'room already joined by another guest' });
         return;
       }
 

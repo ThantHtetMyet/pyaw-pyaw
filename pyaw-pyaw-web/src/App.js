@@ -107,7 +107,7 @@ function readHostIdPayload(hostId) {
 
 function RoomTab({ topic, role, sessionExpiresAt }) {
   const [isPeerJoined, setIsPeerJoined] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [activeMessage, setActiveMessage] = useState(null);
   const [inputValue, setInputValue] = useState('');
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
@@ -117,7 +117,22 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
+  const messageTimerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
+
+  const showSingleMessage = (sender, text) => {
+    if (!text) {
+      return;
+    }
+    setActiveMessage({ id: Date.now(), sender, text });
+    if (messageTimerRef.current) {
+      window.clearTimeout(messageTimerRef.current);
+    }
+    messageTimerRef.current = window.setTimeout(() => {
+      setActiveMessage(null);
+      messageTimerRef.current = null;
+    }, 2800);
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -126,6 +141,15 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
 
     return () => window.clearInterval(timer);
   }, [sessionExpiresAt]);
+
+  useEffect(
+    () => () => {
+      if (messageTimerRef.current) {
+        window.clearTimeout(messageTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     let isUnmounted = false;
@@ -220,10 +244,7 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
           if (messageTopic.endsWith('/chat')) {
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
-            setMessages(prevMessages => [
-              ...prevMessages,
-              { sender: payload?.senderRole === 'host' ? 'Host' : 'Guest', text },
-            ]);
+            showSingleMessage(payload?.senderRole === 'host' ? 'Host' : 'Guest', text);
           }
         });
 
@@ -264,7 +285,7 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
     });
 
     mqttClientRef.current.publish(`${topic}/chat`, payload);
-    setMessages(prevMessages => [...prevMessages, { sender: role === 'host' ? 'Host' : 'Guest', text: messageText }]);
+    showSingleMessage(role === 'host' ? 'Host' : 'Guest', messageText);
     setInputValue('');
   };
 
@@ -301,13 +322,17 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
         )}
         {!isWaiting && !isExpired && (
           <div className="chat-box">
+            <div className="room-connected-banner">
+              <div className="room-connected-smile">😊</div>
+              <div>Connected. Start chatting.</div>
+            </div>
             <div className="chat-messages">
-              {messages.length === 0 && <div className="chat-empty">Connected. Start sending messages.</div>}
-              {messages.map((message, index) => (
-                <div key={`${message.sender}-${index}`} className="chat-message-item">
-                  <span className="chat-sender">{message.sender}:</span> {message.text}
+              {!activeMessage && <div className="chat-empty">Waiting for message...</div>}
+              {activeMessage && (
+                <div key={activeMessage.id} className="chat-message-float">
+                  <span className="chat-sender">{activeMessage.sender}:</span> {activeMessage.text}
                 </div>
-              ))}
+              )}
             </div>
             <div className="chat-input-row">
               <input
@@ -464,6 +489,7 @@ function App() {
         locatedPosition={locatedPosition}
         searchedRooms={searchedRooms}
         isSearchingRooms={isSearchingRooms}
+        onJoinRoom={handleJoinRoom}
         showNoRoomFound={!isSearchingRooms && scanResult === 'empty' && isNoRoomVisible}
         onDismissNoRoom={handleDismissNoRoom}
         onCancelScan={handleCancelScan}

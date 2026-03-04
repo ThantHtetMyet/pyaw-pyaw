@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -57,6 +57,7 @@ function MapComponent({
   showNoRoomFound = false,
   onDismissNoRoom,
   onCancelScan,
+  onJoinRoom,
 }) {
   const defaultPosition = [51.505, -0.09];
   const markerIcon = useMemo(() => {
@@ -104,6 +105,19 @@ function MapComponent({
       }),
     []
   );
+  const [joiningTopic, setJoiningTopic] = useState('');
+
+  const handleJoinFromMap = async room => {
+    if (!room?.topic || joiningTopic) {
+      return;
+    }
+    setJoiningTopic(room.topic);
+    try {
+      await onJoinRoom?.(room);
+    } finally {
+      setJoiningTopic('');
+    }
+  };
 
   return (
     <div className="map-stage">
@@ -129,8 +143,18 @@ function MapComponent({
         {!isSearchingRooms && searchedRoomMarkers.map(room => (
           <Marker key={room.topic} position={[room.lat, room.lng]} icon={room.icon}>
             <Popup>
-              Room found
-              {room.message ? ` - ${room.message}` : ''}
+              <div className="map-room-popup">
+                <div className="map-room-popup-title">Room found</div>
+                {room.message ? <div className="map-room-popup-message">{room.message}</div> : null}
+                <button
+                  type="button"
+                  className="map-room-popup-join-button"
+                  onClick={() => handleJoinFromMap(room)}
+                  disabled={Boolean(joiningTopic)}
+                >
+                  {joiningTopic === room.topic ? 'Joining...' : 'Join'}
+                </button>
+              </div>
             </Popup>
           </Marker>
         ))}
