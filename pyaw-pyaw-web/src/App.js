@@ -2,6 +2,7 @@ import mqtt from 'mqtt';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
+import InfoModal from './components/InfoModal/InfoModal';
 
 const DEFAULT_SESSION_MS = 5 * 60 * 1000;
 const DEFAULT_API_BASE_URL = 'https://pyaw-pyaw-api.onrender.com';
@@ -105,9 +106,10 @@ function readHostIdPayload(hostId) {
   }
 }
 
-function RoomTab({ topic, role, sessionExpiresAt }) {
+function RoomTab({ topic, role, sessionExpiresAt, username }) {
   const [isPeerJoined, setIsPeerJoined] = useState(false);
-  const [activeMessage, setActiveMessage] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [showChatInterface, setShowChatInterface] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
@@ -117,22 +119,23 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
-  const messageTimerRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
 
-  const showSingleMessage = (sender, text) => {
+  const addMessage = (sender, text) => {
     if (!text) {
       return;
     }
-    setActiveMessage({ id: Date.now(), sender, text });
-    if (messageTimerRef.current) {
-      window.clearTimeout(messageTimerRef.current);
-    }
-    messageTimerRef.current = window.setTimeout(() => {
-      setActiveMessage(null);
-      messageTimerRef.current = null;
-    }, 2800);
+    setMessages(prev => [...prev, { id: Date.now(), sender, text }]);
   };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, showChatInterface]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -142,14 +145,16 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
     return () => window.clearInterval(timer);
   }, [sessionExpiresAt]);
 
-  useEffect(
-    () => () => {
-      if (messageTimerRef.current) {
-        window.clearTimeout(messageTimerRef.current);
-      }
-    },
-    []
-  );
+  const isWaiting = !isPeerJoined && !isExpired;
+
+  useEffect(() => {
+    if (!isWaiting && !isExpired && !showChatInterface) {
+      const timer = window.setTimeout(() => {
+        setShowChatInterface(true);
+      }, 2500);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isWaiting, isExpired, showChatInterface]);
 
   useEffect(() => {
     let isUnmounted = false;
@@ -195,6 +200,7 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
                 clientId: clientIdRef.current,
                 senderId: clientIdRef.current,
                 senderRole: role,
+                senderName: username,
               })
             );
           });
@@ -235,6 +241,7 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
                   clientId: clientIdRef.current,
                   senderId: clientIdRef.current,
                   senderRole: role,
+                  senderName: username,
                 })
               );
             }
@@ -244,7 +251,8 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
           if (messageTopic.endsWith('/chat')) {
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
-            showSingleMessage(payload?.senderRole === 'host' ? 'Host' : 'Guest', text);
+            const senderName = payload?.senderName || (payload?.senderRole === 'host' ? 'Host' : 'Guest');
+            addMessage(senderName, text);
           }
         });
 
@@ -269,7 +277,7 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, sessionExpiresAt]);
+  }, [topic, role, sessionExpiresAt, username]);
 
   const handleSendMessage = () => {
     const messageText = inputValue.trim();
@@ -281,15 +289,15 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
       type: 'chat',
       senderId: clientIdRef.current,
       senderRole: role,
+      senderName: username,
       text: messageText,
     });
 
     mqttClientRef.current.publish(`${topic}/chat`, payload);
-    showSingleMessage(role === 'host' ? 'Host' : 'Guest', messageText);
+    addMessage(username || (role === 'host' ? 'Host' : 'Guest'), messageText);
     setInputValue('');
   };
 
-  const isWaiting = !isPeerJoined && !isExpired;
   const timerMinutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
   const timerSeconds = String(remainingSeconds % 60).padStart(2, '0');
 
@@ -297,12 +305,6 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
     <div className="room-tab-page">
       <div className="room-panel">
         <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
-        {!isWaiting && !isExpired && (
-          <>
-            <h2 className="room-title">Room Topic</h2>
-            <div className="room-topic">{topic}</div>
-          </>
-        )}
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isWaiting && (
           <div className="room-waiting">
@@ -320,19 +322,26 @@ function RoomTab({ topic, role, sessionExpiresAt }) {
             </div>
           </div>
         )}
-        {!isWaiting && !isExpired && (
-          <div className="chat-box">
-            <div className="room-connected-banner">
-              <div className="room-connected-smile">😊</div>
-              <div>Connected. Start chatting.</div>
+        {!isWaiting && !isExpired && !showChatInterface && (
+          <div className="room-waiting">
+            <div className="room-waiting-icon">
+              <span />
+              <span />
+              <span />
             </div>
+            <div className="room-connected-text">Connected. Start chatting.</div>
+          </div>
+        )}
+        {showChatInterface && (
+          <div className="chat-box">
             <div className="chat-messages">
-              {!activeMessage && <div className="chat-empty">Waiting for message...</div>}
-              {activeMessage && (
-                <div key={activeMessage.id} className="chat-message-float">
-                  <span className="chat-sender">{activeMessage.sender}:</span> {activeMessage.text}
+              {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
+              {messages.map(message => (
+                <div key={message.id} className="chat-message-item">
+                  <span className="chat-sender">{message.sender}:</span> {message.text}
                 </div>
-              )}
+              ))}
+              <div ref={messagesEndRef} />
             </div>
             <div className="chat-input-row">
               <input
@@ -361,14 +370,20 @@ function App() {
   const [isSearchingRooms, setIsSearchingRooms] = useState(false);
   const [scanResult, setScanResult] = useState('idle');
   const [isNoRoomVisible, setIsNoRoomVisible] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
   const activeScanIdRef = useRef(0);
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const roomTopicFromUrl = searchParams.get('roomTopic');
   const roomRole = searchParams.get('role') === 'host' ? 'host' : 'guest';
+  const usernameFromUrl = searchParams.get('username');
   const sessionExpiresAtParam = Number(searchParams.get('sessionExpiresAt'));
   const sessionExpiresAt = Number.isFinite(sessionExpiresAtParam) && sessionExpiresAtParam > 0
     ? sessionExpiresAtParam
     : Date.now() + DEFAULT_SESSION_MS;
+
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [roomToJoin, setRoomToJoin] = useState(null);
+  const [joinUsername, setJoinUsername] = useState('');
 
   const handleCreateRoom = async roomData => {
     try {
@@ -388,10 +403,10 @@ function App() {
       setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt });
       const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
         room.topic
-      )}&role=host&sessionExpiresAt=${expiresAt}`;
+      )}&role=host&sessionExpiresAt=${expiresAt}&username=${encodeURIComponent(roomData.username || '')}`;
       window.open(roomUrl, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      window.alert(error.message || 'Unable to create room.');
+      setModalMessage(error.message || 'Unable to create room.');
     }
   };
 
@@ -439,6 +454,17 @@ function App() {
     if (!room?.topic || !room?.sessionExpiresAt) {
       return false;
     }
+    setRoomToJoin(room);
+    setJoinUsername('');
+    setJoinModalOpen(true);
+    return true;
+  };
+
+  const confirmJoinRoom = async () => {
+    if (!roomToJoin || !joinUsername.trim()) {
+      return;
+    }
+    const room = roomToJoin;
     try {
       const response = await requestJson('/api/rooms/join', {
         method: 'POST',
@@ -451,12 +477,12 @@ function App() {
       const expiresAt = parseExpiresAt(joinedRoom?.expiresAt || room.sessionExpiresAt);
       const roomUrl = `${window.location.origin}${window.location.pathname}?roomTopic=${encodeURIComponent(
         room.topic
-      )}&role=guest&sessionExpiresAt=${expiresAt}`;
+      )}&role=guest&sessionExpiresAt=${expiresAt}&username=${encodeURIComponent(joinUsername.trim())}`;
       window.open(roomUrl, '_blank', 'noopener,noreferrer');
-      return true;
+      setJoinModalOpen(false);
+      setRoomToJoin(null);
     } catch (error) {
-      window.alert(error.message || 'Unable to join room.');
-      return false;
+      setModalMessage(error.message || 'Unable to join room.');
     }
   };
 
@@ -479,11 +505,12 @@ function App() {
   };
 
   if (roomTopicFromUrl) {
-    return <RoomTab topic={roomTopicFromUrl} role={roomRole} sessionExpiresAt={sessionExpiresAt} />;
+    return <RoomTab topic={roomTopicFromUrl} role={roomRole} sessionExpiresAt={sessionExpiresAt} username={usernameFromUrl} />;
   }
 
   return (
     <div className="App">
+      <InfoModal message={modalMessage} onClose={() => setModalMessage('')} />
       <MapComponent
         createdRoom={createdRoom}
         locatedPosition={locatedPosition}
@@ -500,6 +527,40 @@ function App() {
         onJoinRoom={handleJoinRoom}
         onLocate={handleLocate}
       />
+      {joinModalOpen && (
+        <div className="glass-modal-backdrop" onClick={() => setJoinModalOpen(false)}>
+          <div className="glass-modal" onClick={event => event.stopPropagation()}>
+            <div className="modal-header-row">
+              <h3 className="modal-title">Join Room</h3>
+            </div>
+            <div className="manual-join-section">
+              <input
+                className="manual-join-input"
+                value={joinUsername}
+                onChange={event => setJoinUsername(event.target.value)}
+                placeholder="Enter your username..."
+              />
+            </div>
+            <div className="modal-action-row">
+              <button
+                type="button"
+                className="modal-action-button cancel-button"
+                onClick={() => setJoinModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="modal-action-button create-button"
+                onClick={confirmJoinRoom}
+                disabled={!joinUsername.trim()}
+              >
+                Join
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

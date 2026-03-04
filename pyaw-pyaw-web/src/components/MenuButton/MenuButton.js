@@ -5,6 +5,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedGender, setSelectedGender] = useState('Male');
+  const [username, setUsername] = useState('');
   const [freeText, setFreeText] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -38,6 +39,8 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
     setIsOpen(false);
     setLocationError('');
     setIsCreateModalOpen(true);
+    setUsername('');
+    setFreeText('');
   };
 
   const handleCloseModal = () => {
@@ -93,6 +96,11 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
       return;
     }
 
+    if (!username.trim()) {
+      setLocationError('Please enter a username.');
+      return;
+    }
+
     setIsGettingLocation(true);
     setLocationError('');
     navigator.geolocation.getCurrentPosition(
@@ -101,12 +109,14 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           gender: selectedGender,
+          username: username.trim(),
           message: freeText.trim(),
           createdAt: Date.now(),
         });
         setIsGettingLocation(false);
         setIsCreateModalOpen(false);
         setFreeText('');
+        setUsername('');
       },
       error => {
         if (error.code === error.PERMISSION_DENIED) {
@@ -161,6 +171,14 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
           <div className="glass-modal" onClick={event => event.stopPropagation()}>
             <div className="modal-header-row">
               <h3 className="modal-title">Create Room</h3>
+            </div>
+            <div className="manual-join-section">
+              <input
+                className="manual-join-input"
+                value={username}
+                onChange={event => setUsername(event.target.value)}
+                placeholder="Enter your username..."
+              />
             </div>
             <div className="gender-row">
               <label className="gender-option">

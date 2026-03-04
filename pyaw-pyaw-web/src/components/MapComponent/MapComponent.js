@@ -31,13 +31,15 @@ function MapRecenter({ createdRoom, locatedPosition, searchedRooms }) {
 }
 
 function createHandMarkerIcon(gender) {
-  const genderClass = gender === 'Female' ? 'female' : 'male';
+  const isFemale = gender === 'Female';
+  const genderClass = isFemale ? 'female' : 'male';
+  const iconUrl = isFemale ? 'icons/waving-hand-female.png' : 'icons/waving-hand-male.png';
   return L.divIcon({
-    html: `<div class="user-hand-marker ${genderClass}"><div class="marker-pulse"></div><div class="marker-hand">☝</div></div>`,
+    html: `<div class="user-hand-marker ${genderClass}"><div class="marker-pulse"></div><img src="${iconUrl}" class="marker-hand-img" alt="waving hand" /></div>`,
     className: 'user-hand-marker-wrapper',
-    iconSize: [56, 56],
-    iconAnchor: [28, 52],
-    popupAnchor: [0, -40],
+    iconSize: [64, 64],
+    iconAnchor: [32, 58],
+    popupAnchor: [0, -45],
   });
 }
 
