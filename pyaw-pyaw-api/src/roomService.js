@@ -97,6 +97,24 @@ export const markRoomJoined = async ({ topic, guestId }) => {
   throwOnError(error, 'Failed to update joined room');
 };
 
+export const markRoomLeft = async ({ topic, guestId }) => {
+  let query = supabase
+    .from(roomsTable)
+    .update({
+      last_seen_at: nowIso(),
+      last_guest_id: null,
+    })
+    .eq('topic', topic)
+    .eq('status', 'active');
+
+  if (guestId) {
+    query = query.eq('last_guest_id', guestId);
+  }
+
+  const { error } = await query;
+  throwOnError(error, 'Failed to update room leave state');
+};
+
 export const terminateRoomByTopic = async topic => {
   const { error } = await supabase
     .from(roomsTable)

@@ -1,6 +1,7 @@
 import Aedes from 'aedes';
 import { WebSocketServer, createWebSocketStream } from 'ws';
-import { insertRoomMessage, markRoomJoined, touchRoom } from './roomService.js';
+import { insertRoomMessage, markRoomJoined, markRoomLeft, touchRoom } from './roomService.js';
+import { publishRoomEvent } from './roomEvents.js';
 
 const parseJson = value => {
   try {
@@ -59,6 +60,22 @@ export const startMqttBroker = server =>
             await markRoomJoined({
               topic: parsedTopic.roomTopic,
               guestId: payload.clientId || packet.clientId,
+            });
+            publishRoomEvent({
+              type: 'availability',
+              topic: parsedTopic.roomTopic,
+              availability: 'busy',
+            });
+          }
+          if (payload?.type === 'leave' && payload?.senderRole === 'guest') {
+            await markRoomLeft({
+              topic: parsedTopic.roomTopic,
+              guestId: payload.clientId || packet.clientId,
+            });
+            publishRoomEvent({
+              type: 'availability',
+              topic: parsedTopic.roomTopic,
+              availability: 'idle',
             });
           }
           if (payload?.type === 'join' || payload?.type === 'leave') {

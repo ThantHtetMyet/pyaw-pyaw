@@ -10,6 +10,7 @@ import {
   markRoomJoined,
   terminateRoomByTopic,
 } from './roomService.js';
+import { publishRoomEvent, subscribeRoomEvents } from './roomEvents.js';
 
 export const createApp = () => {
   const app = express();
@@ -44,6 +45,11 @@ export const createApp = () => {
       const requestedTtl = Number(req.body?.ttlSeconds);
       const ttlSeconds = Number.isFinite(requestedTtl) && requestedTtl > 0 ? requestedTtl : defaultTtlSeconds;
       const room = await createRoom({ message, hostId, ttlSeconds });
+      publishRoomEvent({
+        type: 'created',
+        topic: room.topic,
+        availability: room.lastGuestId ? 'busy' : 'idle',
+      });
       res.status(201).json({ room });
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -75,6 +81,11 @@ export const createApp = () => {
       }
 
       await markRoomJoined({ topic, guestId });
+      publishRoomEvent({
+        type: 'availability',
+        topic,
+        availability: 'busy',
+      });
       res.json({ room });
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -89,10 +100,39 @@ export const createApp = () => {
         return;
       }
       await terminateRoomByTopic(topic);
+      publishRoomEvent({
+        type: 'terminated',
+        topic,
+      });
       res.json({ ok: true });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
+  });
+
+  app.get('/api/rooms/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'connected', updatedAt: Date.now() })}\n\n`);
+    const unsubscribe = subscribeRoomEvents(event => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    });
+
+    const pingInterval = setInterval(() => {
+      res.write(`event: ping\ndata: ${Date.now()}\n\n`);
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(pingInterval);
+      unsubscribe();
+      res.end();
+    });
   });
 
   app.get('/api/mqtt/config', (req, res) => {

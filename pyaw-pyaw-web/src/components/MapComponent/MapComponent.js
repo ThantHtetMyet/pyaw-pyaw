@@ -171,9 +171,10 @@ function MapComponent({
 
   const isHostRoom = room => Boolean(room?.topic) && Boolean(hostRoomTopic) && room.topic === hostRoomTopic;
   const getRoomAvailability = room => (room?.availability === 'busy' ? 'busy' : 'idle');
+  const isBusyRoom = room => getRoomAvailability(room) === 'busy';
 
   const handleJoinFromMap = async room => {
-    if (!room?.topic || joiningTopic) {
+    if (!room?.topic || joiningTopic || isBusyRoom(room)) {
       return;
     }
     setJoiningTopic(room.topic);
@@ -242,9 +243,9 @@ function MapComponent({
                   type="button"
                   className="map-room-popup-join-button"
                   onClick={() => handleRoomActionFromMap(room)}
-                  disabled={Boolean(joiningTopic) && !isHostRoom(room)}
+                  disabled={!isHostRoom(room) && (Boolean(joiningTopic) || isBusyRoom(room))}
                 >
-                  {isHostRoom(room) ? 'Connect' : joiningTopic === room.topic ? 'Joining...' : 'Join'}
+                  {isHostRoom(room) ? 'Connect' : isBusyRoom(room) ? 'Busy' : joiningTopic === room.topic ? 'Joining...' : 'Join'}
                 </button>
               </div>
             </Popup>

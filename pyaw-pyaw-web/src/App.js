@@ -609,16 +609,9 @@ function App() {
     }
   };
 
-  const handleSearchRooms = useCallback(async () => {
-    const scanId = activeScanIdRef.current + 1;
-    activeScanIdRef.current = scanId;
-    const startedAt = Date.now();
-    setScanResult('idle');
-    setIsNoRoomVisible(false);
-    setIsSearchingRooms(true);
-    try {
-      const response = await requestJson('/api/rooms/active');
-      const mappedRooms = (response?.rooms || [])
+  const mapActiveRooms = useCallback(
+    rooms =>
+      (rooms || [])
         .map(room => {
           const metadata = readHostIdPayload(room.hostId);
           return {
@@ -633,7 +626,28 @@ function App() {
             availability: room.lastGuestId ? 'busy' : 'idle',
           };
         })
-        .filter(room => !hiddenTopics.has(room.topic));
+        .filter(room => !hiddenTopics.has(room.topic)),
+    [hiddenTopics]
+  );
+
+  const refreshRoomsSilently = useCallback(async () => {
+    const response = await requestJson('/api/rooms/active');
+    const mappedRooms = mapActiveRooms(response?.rooms);
+    setScanResult(mappedRooms.length > 0 ? 'found' : 'empty');
+    setSearchedRooms(mappedRooms.filter(room => Number.isFinite(room.lat) && Number.isFinite(room.lng)));
+    return mappedRooms;
+  }, [mapActiveRooms]);
+
+  const handleSearchRooms = useCallback(async () => {
+    const scanId = activeScanIdRef.current + 1;
+    activeScanIdRef.current = scanId;
+    const startedAt = Date.now();
+    setScanResult('idle');
+    setIsNoRoomVisible(false);
+    setIsSearchingRooms(true);
+    try {
+      const response = await requestJson('/api/rooms/active');
+      const mappedRooms = mapActiveRooms(response?.rooms);
       if (activeScanIdRef.current !== scanId) {
         return [];
       }
@@ -651,7 +665,7 @@ function App() {
         setIsSearchingRooms(false);
       }
     }
-  }, [hiddenTopics]);
+  }, [mapActiveRooms]);
 
   const handleJoinRoom = async room => {
     if (!room?.topic || !room?.sessionExpiresAt) {
@@ -795,14 +809,45 @@ function App() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        handleSearchRooms();
+        refreshRoomsSilently().catch(() => {});
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [handleSearchRooms]);
+  }, [refreshRoomsSilently]);
+
+  useEffect(() => {
+    let isDisposed = false;
+    let reconnectTimer = null;
+    let eventSource = null;
+
+    const connectRealtime = () => {
+      eventSource = new EventSource(`${apiBaseUrl}/api/rooms/stream`);
+      eventSource.onmessage = () => {
+        refreshRoomsSilently().catch(() => {});
+      };
+      eventSource.onerror = () => {
+        eventSource?.close();
+        if (isDisposed) {
+          return;
+        }
+        reconnectTimer = window.setTimeout(connectRealtime, 2000);
+      };
+    };
+
+    refreshRoomsSilently().catch(() => {});
+    connectRealtime();
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      eventSource?.close();
+    };
+  }, [refreshRoomsSilently]);
 
   if (roomTopicFromUrl) {
     return <RoomTab topic={roomTopicFromUrl} role={roomRole} sessionExpiresAt={sessionExpiresAt} username={usernameFromUrl} />;
