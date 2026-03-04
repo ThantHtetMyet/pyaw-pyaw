@@ -204,10 +204,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
   useEffect(() => {
     if (!isWaiting && !isExpired && !showChatInterface) {
-      const timer = window.setTimeout(() => {
-        setShowChatInterface(true);
-      }, 2500);
-      return () => window.clearTimeout(timer);
+      setShowChatInterface(true);
     }
   }, [isWaiting, isExpired, showChatInterface]);
 
@@ -289,12 +286,16 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             const presenceType = payload?.type;
             if (presenceType === 'leave') {
               setIsPeerJoined(false);
+              hasSeenPeerRef.current = false;
               if (role === 'host') {
                 setShowChatInterface(false);
+                setMessages([]);
+                setInputValue('');
               }
               return;
             }
             setIsPeerJoined(true);
+            setShowChatInterface(true);
             if (presenceType === 'join' && !hasSeenPeerRef.current && mqttClient.connected) {
               hasSeenPeerRef.current = true;
               mqttClient.publish(
@@ -320,6 +321,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             }
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
+            setShowChatInterface(true);
             const senderName = payload?.senderName || (payload?.senderRole === 'host' ? 'Host' : 'Guest');
             addMessage(senderName, text);
           }
@@ -361,9 +363,13 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
         }
         if (payload?.availability === 'idle') {
           setIsPeerJoined(false);
+          hasSeenPeerRef.current = false;
           setShowChatInterface(false);
+          setMessages([]);
+          setInputValue('');
         } else if (payload?.availability === 'busy') {
           setIsPeerJoined(true);
+          setShowChatInterface(true);
         }
       } catch {
       }
