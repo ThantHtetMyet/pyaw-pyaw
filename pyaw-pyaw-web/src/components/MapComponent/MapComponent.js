@@ -49,7 +49,14 @@ function hashTopic(topic) {
   return hash;
 }
 
-function MapComponent({ createdRoom, locatedPosition, searchedRooms = [], isSearchingRooms }) {
+function MapComponent({
+  createdRoom,
+  locatedPosition,
+  searchedRooms = [],
+  isSearchingRooms,
+  showNoRoomFound = false,
+  onDismissNoRoom,
+}) {
   const defaultPosition = [51.505, -0.09];
   const markerIcon = useMemo(() => {
     if (!createdRoom) {
@@ -142,6 +149,21 @@ function MapComponent({ createdRoom, locatedPosition, searchedRooms = [], isSear
             </div>
             <div className="scan-modal-title">Scanning Rooms</div>
             <div className="scan-modal-subtitle">Searching nearby active rooms...</div>
+          </div>
+        </div>
+      )}
+      {showNoRoomFound && (
+        <div className="no-room-overlay" onClick={onDismissNoRoom}>
+          <div className="no-room-panel" onClick={event => event.stopPropagation()}>
+            <div className="no-room-header">
+              <button type="button" className="no-room-close-button" onClick={onDismissNoRoom} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <div className="no-room-body">
+              <div className="no-room-icon">😞</div>
+              <div className="no-room-text">No room found, try again</div>
+            </div>
           </div>
         </div>
       )}

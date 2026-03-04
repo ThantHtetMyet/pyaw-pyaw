@@ -160,6 +160,67 @@ code {
   font-weight: 600;
 }
 
+.no-room-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  pointer-events: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.no-room-panel {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+  box-shadow: 0 14px 30px rgba(5, 8, 15, 0.34);
+  backdrop-filter: blur(8px);
+  min-width: 200px;
+  padding: 10px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.no-room-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.no-room-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 2px;
+}
+
+.no-room-close-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background: rgba(8, 10, 15, 0.36);
+  color: #ffffff;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.no-room-icon {
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.no-room-text {
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .user-hand-marker {
   position: relative;
   width: 56px;

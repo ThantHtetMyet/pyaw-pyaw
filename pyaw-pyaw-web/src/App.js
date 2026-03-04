@@ -334,6 +334,8 @@ function App() {
   const [locatedPosition, setLocatedPosition] = useState(null);
   const [searchedRooms, setSearchedRooms] = useState([]);
   const [isSearchingRooms, setIsSearchingRooms] = useState(false);
+  const [scanResult, setScanResult] = useState('idle');
+  const [isNoRoomVisible, setIsNoRoomVisible] = useState(false);
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const roomTopicFromUrl = searchParams.get('roomTopic');
   const roomRole = searchParams.get('role') === 'host' ? 'host' : 'guest';
@@ -369,6 +371,8 @@ function App() {
 
   const handleSearchRooms = async () => {
     const startedAt = Date.now();
+    setScanResult('idle');
+    setIsNoRoomVisible(false);
     setIsSearchingRooms(true);
     try {
       const response = await requestJson('/api/rooms/active');
@@ -384,6 +388,9 @@ function App() {
             gender: metadata?.gender || 'Male',
           };
         });
+      const nextResult = mappedRooms.length > 0 ? 'found' : 'empty';
+      setScanResult(nextResult);
+      setIsNoRoomVisible(nextResult === 'empty');
       setSearchedRooms(mappedRooms.filter(room => Number.isFinite(room.lat) && Number.isFinite(room.lng)));
       return mappedRooms;
     } finally {
@@ -427,6 +434,10 @@ function App() {
     setLocatedPosition(position);
   };
 
+  const handleDismissNoRoom = () => {
+    setIsNoRoomVisible(false);
+  };
+
   if (roomTopicFromUrl) {
     return <RoomTab topic={roomTopicFromUrl} role={roomRole} sessionExpiresAt={sessionExpiresAt} />;
   }
@@ -438,6 +449,8 @@ function App() {
         locatedPosition={locatedPosition}
         searchedRooms={searchedRooms}
         isSearchingRooms={isSearchingRooms}
+        showNoRoomFound={!isSearchingRooms && scanResult === 'empty' && isNoRoomVisible}
+        onDismissNoRoom={handleDismissNoRoom}
       />
       <MenuButton
         onCreateRoom={handleCreateRoom}
