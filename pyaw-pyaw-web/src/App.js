@@ -286,8 +286,16 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           }
 
           if (messageTopic.endsWith('/presence')) {
+            const presenceType = payload?.type;
+            if (presenceType === 'leave') {
+              setIsPeerJoined(false);
+              if (role === 'host') {
+                setShowChatInterface(false);
+              }
+              return;
+            }
             setIsPeerJoined(true);
-            if (!hasSeenPeerRef.current && mqttClient.connected) {
+            if (presenceType === 'join' && !hasSeenPeerRef.current && mqttClient.connected) {
               hasSeenPeerRef.current = true;
               mqttClient.publish(
                 `${topic}/presence`,
@@ -386,8 +394,27 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
   const handleExitChat = async () => {
     const isHost = isHostRole;
-    if (isHost && mqttClientRef.current?.connected) {
-      mqttClientRef.current.publish(
+    const publishBeforeExit = (publishTopic, payloadText) =>
+      new Promise(resolve => {
+        const client = mqttClientRef.current;
+        if (!client?.connected) {
+          resolve();
+          return;
+        }
+        let settled = false;
+        const finish = () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          resolve();
+        };
+        client.publish(publishTopic, payloadText, finish);
+        window.setTimeout(finish, 350);
+      });
+
+    if (isHost) {
+      await publishBeforeExit(
         `${topic}/chat`,
         JSON.stringify({
           type: 'kill',
@@ -397,11 +424,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           text: 'Host killed this room.',
         })
       );
-    } else if (mqttClientRef.current?.connected) {
-      mqttClientRef.current.publish(
+    } else {
+      await publishBeforeExit(
         `${topic}/presence`,
         JSON.stringify({
           type: 'leave',
+          clientId: clientIdRef.current,
           senderId: clientIdRef.current,
           senderRole: role,
           senderName: username,

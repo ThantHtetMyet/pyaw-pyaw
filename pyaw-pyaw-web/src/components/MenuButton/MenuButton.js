@@ -11,8 +11,12 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [locateStatus, setLocateStatus] = useState('');
+  const [locateStatusType, setLocateStatusType] = useState('');
+  const [locationPermissionModalOpen, setLocationPermissionModalOpen] = useState(false);
   const [resumeRoom, setResumeRoom] = useState(null);
   const containerRef = useRef(null);
+  const locateStatusTimerRef = useRef(null);
   const emitLayoutChange = () => {
     window.setTimeout(() => {
       window.dispatchEvent(new Event('pyaw-pyaw-layout-change'));
@@ -34,6 +38,15 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
       document.removeEventListener('touchstart', handleDocumentClick);
     };
   }, []);
+
+  useEffect(
+    () => () => {
+      if (locateStatusTimerRef.current) {
+        window.clearTimeout(locateStatusTimerRef.current);
+      }
+    },
+    []
+  );
 
   const handleClick = () => {
     setIsOpen(prevIsOpen => {
@@ -88,6 +101,8 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
   const handleSearchClick = async () => {
     setIsOpen(false);
     setLocationError('');
+    setLocateStatus('');
+    setLocateStatusType('');
     try {
       await onSearchRooms?.();
     } catch (error) {
@@ -95,15 +110,30 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
     }
   };
 
-  const handleLocateClick = () => {
+  const clearLocateStatusWithTimer = () => {
+    if (locateStatusTimerRef.current) {
+      window.clearTimeout(locateStatusTimerRef.current);
+    }
+    locateStatusTimerRef.current = window.setTimeout(() => {
+      setLocateStatus('');
+      setLocateStatusType('');
+    }, 2600);
+  };
+
+  const requestCurrentLocation = () => {
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported by this browser.');
+      setLocateStatus('Geolocation is not supported by this browser.');
+      setLocateStatusType('error');
+      setLocationPermissionModalOpen(true);
       return;
     }
 
     setLocationError('');
-    setIsOpen(false);
+    setLocateStatus('Locating...');
+    setLocateStatusType('info');
     setIsLocating(true);
+    setLocationPermissionModalOpen(false);
     navigator.geolocation.getCurrentPosition(
       position => {
         onLocate?.({
@@ -112,19 +142,31 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
           locatedAt: Date.now(),
         });
         setIsLocating(false);
+        setLocationError('');
+        setLocateStatus('Location updated successfully.');
+        setLocateStatusType('success');
+        clearLocateStatusWithTimer();
       },
       error => {
+        let nextError = 'Unable to get your location right now.';
         if (error.code === error.PERMISSION_DENIED) {
-          setLocationError('Location permission was denied.');
+          nextError = 'Location permission was denied.';
         } else if (error.code === error.TIMEOUT) {
-          setLocationError('Location request timed out. Please try again.');
-        } else {
-          setLocationError('Unable to get your location right now.');
+          nextError = 'Location request timed out. Please try again.';
         }
+        setLocationError(nextError);
+        setLocateStatus(nextError);
+        setLocateStatusType('error');
+        setLocationPermissionModalOpen(true);
         setIsLocating(false);
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
+  };
+
+  const handleLocateClick = () => {
+    setIsOpen(false);
+    requestCurrentLocation();
   };
 
   const handleCreateRoom = () => {
@@ -204,7 +246,11 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
           </span>
         </div>
         {isLocating && <div className="locate-status">Locating...</div>}
-        {!isCreateModalOpen && locationError && <div className="locate-status error">{locationError}</div>}
+        {!isLocating && locateStatus && (
+          <div className={`locate-status ${locateStatusType === 'error' ? 'error' : ''} ${locateStatusType === 'success' ? 'success' : ''}`}>
+            {locateStatus}
+          </div>
+        )}
       </div>
       {isCreateModalOpen && (
         <div className="glass-modal-backdrop" onClick={handleCloseModal}>
@@ -304,6 +350,36 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
                 onClick={handleResumeRoom}
               >
                 Resume Room
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {locationPermissionModalOpen && (
+        <div className="glass-modal-backdrop" onClick={() => setLocationPermissionModalOpen(false)}>
+          <div className="glass-modal" onClick={event => event.stopPropagation()}>
+            <div className="modal-header-row">
+              <h3 className="modal-title">Location Permission</h3>
+            </div>
+            <div className="manual-join-section">
+              <p className="modal-description">Allow location access to use locate feature and update your position on map.</p>
+            </div>
+            <div className="modal-action-row">
+              <button
+                type="button"
+                className="modal-action-button cancel-button"
+                onClick={() => setLocationPermissionModalOpen(false)}
+                disabled={isLocating}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="modal-action-button create-button"
+                onClick={requestCurrentLocation}
+                disabled={isLocating}
+              >
+                {isLocating ? 'Locating...' : 'Allow Location'}
               </button>
             </div>
           </div>

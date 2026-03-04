@@ -221,6 +221,11 @@
   color: #ffd6db;
 }
 
+.locate-status.success {
+  border-color: rgba(145, 255, 210, 0.62);
+  color: #d9ffe9;
+}
+
 /* Action buttons moved to index.css */
 
 
