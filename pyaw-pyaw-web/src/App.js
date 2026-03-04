@@ -7,7 +7,7 @@ import InfoModal from './components/InfoModal/InfoModal';
 const DEFAULT_SESSION_MS = 5 * 60 * 1000;
 const DEFAULT_API_BASE_URL = 'https://pyaw-pyaw-api.onrender.com';
 const CLIENT_ID_KEY = 'pyaw-pyaw-client-id';
-const MIN_SCAN_VISIBILITY_MS = 15 * 1000;
+const MIN_SCAN_VISIBILITY_MS = 5 * 1000;
 
 function normalizeBaseUrl(urlText) {
   return (urlText || '').trim().replace(/\/+$/, '');
@@ -71,6 +71,8 @@ function buildHostIdPayload(hostId, roomData) {
     lat: roomData?.lat,
     lng: roomData?.lng,
     gender: roomData?.gender === 'Female' ? 'Female' : 'Male',
+    username: roomData?.username || '',
+    messageType: roomData?.messageType || 'Hi',
   };
   if (!Number.isFinite(metadata.lat) || !Number.isFinite(metadata.lng)) {
     return hostId;
@@ -100,6 +102,8 @@ function readHostIdPayload(hostId) {
       lat: parsed.lat,
       lng: parsed.lng,
       gender: parsed.gender === 'Female' ? 'Female' : 'Male',
+      username: typeof parsed.username === 'string' ? parsed.username : '',
+      messageType: parsed.messageType || 'Hi',
     };
   } catch (error) {
     return null;
@@ -385,6 +389,27 @@ function App() {
   const [roomToJoin, setRoomToJoin] = useState(null);
   const [joinUsername, setJoinUsername] = useState('');
 
+  // Initial Geolocation Request
+  useEffect(() => {
+    if (navigator.geolocation && !locatedPosition) {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          setLocatedPosition({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            locatedAt: Date.now(),
+          });
+        },
+        error => {
+          // Silent failure is okay for initial auto-locate
+          // We don't want to spam the user with modal errors on launch
+          console.debug('Initial location request failed or denied:', error);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+  }, [locatedPosition]);
+
   const handleCreateRoom = async roomData => {
     try {
       const hostId = getOrCreateClientId();
@@ -438,6 +463,8 @@ function App() {
             lat: metadata?.lat,
             lng: metadata?.lng,
             gender: metadata?.gender || 'Male',
+            username: metadata?.username || 'Anonymous',
+            messageType: metadata?.messageType || 'Hi',
           };
         });
       if (activeScanIdRef.current !== scanId) {

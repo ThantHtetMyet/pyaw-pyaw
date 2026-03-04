@@ -84,13 +84,14 @@ code {
 }
 
 .cancel-button {
-  background: rgba(255, 86, 86, 0.2);
-  border-color: rgba(255, 86, 86, 0.4);
-  color: #ffcccc;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .cancel-button:hover {
-  background: rgba(255, 86, 86, 0.3);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
 }
 
 .modal-description {
@@ -134,10 +135,94 @@ code {
   color: rgba(255, 255, 255, 0.56);
 }
 
+.gender-row {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+.gender-badge {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+
+.gender-badge:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.gender-badge.male.selected {
+  background: rgba(56, 168, 255, 0.25);
+  border-color: rgba(56, 168, 255, 0.6);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(56, 168, 255, 0.15);
+}
+
+.gender-badge.female.selected {
+  background: rgba(255, 86, 170, 0.25);
+  border-color: rgba(255, 86, 170, 0.6);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 86, 170, 0.15);
+}
+
+.message-type-row {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-start;
+  margin-top: -6px;
+  margin-bottom: 8px;
+}
+
+.message-type-badge {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+
+.message-type-badge:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.message-type-badge.selected {
+  background: rgba(56, 168, 255, 0.25);
+  border-color: rgba(56, 168, 255, 0.6);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(56, 168, 255, 0.15);
+}
+
+.message-type-badge.selected:nth-child(2) {
+  background: rgba(255, 86, 86, 0.25);
+  border-color: rgba(255, 86, 86, 0.6);
+  box-shadow: 0 0 12px rgba(255, 86, 86, 0.15);
+}
+
 @media (max-width: 768px) {
   .glass-modal-backdrop {
-    align-items: flex-start;
-    padding: max(10px, env(safe-area-inset-top)) 10px 14px;
+    align-items: center;
+    padding: 14px;
   }
 
   .glass-modal {
@@ -356,29 +441,91 @@ code {
 }
 
 .map-room-popup {
-  min-width: 150px;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 4px 0;
 }
 
-.map-room-popup-title {
+.map-room-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.map-room-popup-username {
   font-weight: 700;
+  font-size: 1rem;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .map-room-popup-message {
-  color: #2a2d3d;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  background: rgba(0, 0, 0, 0.1);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border-left: 3px solid rgba(255, 255, 255, 0.5);
 }
 
 .map-room-popup-join-button {
-  border: 1px solid rgba(58, 116, 255, 0.45);
-  border-radius: 9px;
-  background: linear-gradient(135deg, #5d79ff, #3aa4ff);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
   color: #ffffff;
   font: inherit;
   font-weight: 700;
-  padding: 6px 10px;
+  padding: 8px 12px;
   cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.map-room-popup-join-button:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Override Leaflet Popup Styles */
+.leaflet-popup-content-wrapper {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.room-popup.female .leaflet-popup-content-wrapper {
+  background: linear-gradient(135deg, #ff7dbd, #ff56aa);
+}
+
+.room-popup.male .leaflet-popup-content-wrapper {
+  background: linear-gradient(135deg, #7ad6ff, #38a8ff);
+}
+
+.leaflet-popup-content {
+  margin: 12px 16px;
+  width: auto !important;
+}
+
+.leaflet-popup-tip {
+  display: none; /* Hide tip for a cleaner floating look or style it */
+}
+
+.room-popup.female .leaflet-popup-tip {
+  background: #ff56aa;
+}
+
+.room-popup.male .leaflet-popup-tip {
+  background: #38a8ff;
+}
+
+.leaflet-popup-close-button {
+  color: #ffffff !important;
+  padding: 8px !important;
 }
 
 .no-room-overlay {
@@ -449,17 +596,88 @@ code {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  animation: markerFloat 1.35s ease-in-out infinite;
+  animation: markerFloat 2s ease-in-out infinite;
 }
 
-.marker-hand-img {
+.marker-hand-halo {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+.user-hand-marker.male .marker-hand-halo {
+  background: radial-gradient(circle, rgba(126, 211, 255, 0.5), rgba(56, 168, 255, 0.08) 70%);
+}
+
+.user-hand-marker.female .marker-hand-halo {
+  background: radial-gradient(circle, rgba(255, 162, 215, 0.5), rgba(255, 86, 170, 0.08) 70%);
+}
+
+.marker-wave-line {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  transform: rotate(-22deg);
+  opacity: 0;
+  animation: handSpark 1.8s ease-in-out infinite;
+  z-index: 3;
+}
+
+.marker-wave-line.line-one {
+  right: 2px;
+  top: 10px;
+}
+
+.marker-wave-line.line-two {
+  right: -3px;
+  top: 4px;
+  width: 16px;
+  height: 16px;
+  animation-delay: 0.25s;
+}
+
+.marker-hand-svg {
   position: relative;
   z-index: 2;
   width: 48px;
   height: 48px;
-  object-fit: contain;
   transform-origin: bottom center;
-  animation: handWave 2s ease-in-out infinite;
+  animation: handWave 1.8s ease-in-out infinite;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3));
+  overflow: visible;
+}
+
+.marker-hand-svg.help-svg {
+  animation: none;
+}
+
+.marker-finger-lines {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.82);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.marker-palm-highlight {
+  fill: rgba(255, 255, 255, 0.24);
+}
+
+.user-hand-marker.male .marker-hand-svg {
+  filter: drop-shadow(0 0 8px rgba(56, 168, 255, 0.8));
+}
+
+.user-hand-marker.female .marker-hand-svg {
+  filter: drop-shadow(0 0 8px rgba(255, 86, 170, 0.8));
 }
 
 .marker-pulse {
@@ -470,24 +688,52 @@ code {
   height: 18px;
   border-radius: 50%;
   transform: translateX(-50%);
-  animation: markerPulse 1.55s ease-out infinite;
+  animation: markerPulse 1.8s ease-out infinite;
 }
 
 .user-hand-marker.male .marker-pulse {
-  background-color: rgba(99, 199, 255, 0.34);
+  background-color: rgba(56, 168, 255, 0.6);
+  box-shadow: 0 0 12px rgba(56, 168, 255, 0.4);
 }
 
 .user-hand-marker.female .marker-pulse {
-  background-color: rgba(255, 121, 200, 0.34);
-}
-
-.user-hand-marker.female .marker-pulse {
-  background-color: rgba(255, 121, 200, 0.34);
+  background-color: rgba(255, 86, 170, 0.6);
+  box-shadow: 0 0 12px rgba(255, 86, 170, 0.4);
 }
 
 @keyframes handWave {
-  0%, 100% { transform: rotate(-12deg); }
-  50% { transform: rotate(12deg); }
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-17deg) scale(1.02);
+  }
+  50% {
+    transform: rotate(13deg) scale(1.03);
+  }
+  75% {
+    transform: rotate(-7deg) scale(1.01);
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes handSpark {
+  0%,
+  35% {
+    opacity: 0;
+    transform: rotate(-22deg) scale(0.7);
+  }
+  50%,
+  72% {
+    opacity: 1;
+    transform: rotate(-22deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-22deg) scale(0.85);
+  }
 }
 
 @keyframes markerPulse {
@@ -496,7 +742,7 @@ code {
     opacity: 0.95;
   }
   100% {
-    transform: translateX(-50%) scale(2.8);
+    transform: translateX(-50%) scale(3.5);
     opacity: 0;
   }
 }

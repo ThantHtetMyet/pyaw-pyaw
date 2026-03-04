@@ -175,24 +175,6 @@
 /* Modal styles moved to index.css */
 
 
-.gender-row {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.gender-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #f8f8ff;
-  font-weight: 600;
-}
-
-.gender-option input[type='radio'] {
-  accent-color: #7a6bff;
-}
-
 .textarea-row textarea {
   display: block;
   width: 100%;

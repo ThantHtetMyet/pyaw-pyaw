@@ -30,12 +30,42 @@ function MapRecenter({ createdRoom, locatedPosition, searchedRooms }) {
   return null;
 }
 
-function createHandMarkerIcon(gender) {
+function createHandMarkerIcon(gender, messageType) {
   const isFemale = gender === 'Female';
   const genderClass = isFemale ? 'female' : 'male';
-  const iconUrl = isFemale ? 'icons/waving-hand-female.png' : 'icons/waving-hand-male.png';
+  const color = isFemale ? '#ff56aa' : '#38a8ff';
+  
+  if (messageType === 'Help') {
+    const helpPath = "M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10s10-4.48,10-10S17.52,2,12,2z M12,20c-4.41,0-8-3.59-8-8s3.59-8,8-8 s8,3.59,8,8S16.41,20,12,20z M12,6c-3.31,0-6,2.69-6,6s2.69,6,6,6s6-2.69,6-6S15.31,6,12,6z";
+    return L.divIcon({
+      html: `<div class="user-hand-marker ${genderClass} help-marker">
+              <div class="marker-pulse"></div>
+              <div class="marker-hand-halo"></div>
+              <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="${helpPath}" fill="${color}" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+              </svg>
+             </div>`,
+      className: 'user-hand-marker-wrapper',
+      iconSize: [64, 64],
+      iconAnchor: [32, 58],
+      popupAnchor: [0, -45],
+    });
+  }
+
+  const handPath = "M13,2.1v7h-1V3.1c0-0.62-0.5-1.1-1.1-1.1S9.8,2.48,9.8,3.1v6h-1V4.9c0-0.78-0.62-1.4-1.4-1.4S6,4.12,6,4.9v7.7l-0.9-0.2c-0.53-0.12-1.06,0.2-1.18,0.73c-0.04,0.2-0.02,0.41,0.05,0.6l1.28,3.94C5.68,19.1,6.82,20,8.1,20H16c1.66,0,3-1.34,3-3V9.9c0-0.78-0.62-1.4-1.4-1.4s-1.4,0.62-1.4,1.4v1.8h-1V4.2c0-0.62-0.5-1.1-1.1-1.1S13,3.58,13,4.2z";
+
   return L.divIcon({
-    html: `<div class="user-hand-marker ${genderClass}"><div class="marker-pulse"></div><img src="${iconUrl}" class="marker-hand-img" alt="waving hand" /></div>`,
+    html: `<div class="user-hand-marker ${genderClass}">
+            <div class="marker-pulse"></div>
+            <div class="marker-hand-halo"></div>
+            <span class="marker-wave-line line-one"></span>
+            <span class="marker-wave-line line-two"></span>
+            <svg class="marker-hand-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="${handPath}" fill="${color}" stroke="#ffffff" stroke-width="1.1" stroke-linejoin="round" />
+              <path class="marker-finger-lines" d="M9.2 5.2V9.3M11 4.2V9.1M12.8 5V9.2M14.7 6.1V9.3" />
+              <path class="marker-palm-highlight" d="M8.2 12.2c0.9-0.5 2.2-0.8 3.6-0.8c1.5 0 2.9 0.3 4 0.9c0.3 0.2 0.5 0.6 0.3 0.9c-0.2 0.3-0.6 0.4-0.9 0.2c-0.8-0.5-2-0.7-3.4-0.7c-1.3 0-2.4 0.2-3.2 0.7c-0.3 0.2-0.7 0.1-0.9-0.2C7.8 12.8 7.9 12.4 8.2 12.2z" />
+            </svg>
+           </div>`,
     className: 'user-hand-marker-wrapper',
     iconSize: [64, 64],
     iconAnchor: [32, 58],
@@ -66,7 +96,7 @@ function MapComponent({
     if (!createdRoom) {
       return null;
     }
-    return createHandMarkerIcon(createdRoom.gender);
+    return createHandMarkerIcon(createdRoom.gender, createdRoom.messageType);
   }, [createdRoom]);
   const searchedRoomMarkers = useMemo(
     () =>
@@ -74,7 +104,7 @@ function MapComponent({
         .filter(room => Number.isFinite(room?.lat) && Number.isFinite(room?.lng))
         .map(room => ({
           ...room,
-          icon: createHandMarkerIcon(room.gender),
+          icon: createHandMarkerIcon(room.gender, room.messageType),
         })),
     [searchedRooms]
   );
@@ -144,9 +174,11 @@ function MapComponent({
         )}
         {!isSearchingRooms && searchedRoomMarkers.map(room => (
           <Marker key={room.topic} position={[room.lat, room.lng]} icon={room.icon}>
-            <Popup>
+            <Popup className={`room-popup ${room.gender === 'Female' ? 'female' : 'male'}`}>
               <div className="map-room-popup">
-                <div className="map-room-popup-title">Room found</div>
+                <div className="map-room-popup-header">
+                  <div className="map-room-popup-username">{room.username}</div>
+                </div>
                 {room.message ? <div className="map-room-popup-message">{room.message}</div> : null}
                 <button
                   type="button"

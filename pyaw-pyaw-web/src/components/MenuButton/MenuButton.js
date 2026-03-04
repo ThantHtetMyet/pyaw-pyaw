@@ -5,6 +5,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedGender, setSelectedGender] = useState('Male');
+  const [messageType, setMessageType] = useState('Hi');
   const [username, setUsername] = useState('');
   const [freeText, setFreeText] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -57,6 +58,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
 
     setIsCreateModalOpen(true);
     setUsername('');
+    setMessageType('Hi');
     setFreeText('');
   };
 
@@ -138,6 +140,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
           lng: position.coords.longitude,
           gender: selectedGender,
           username: username.trim(),
+          messageType: messageType,
           message: freeText.trim(),
           createdAt: Date.now(),
         });
@@ -145,6 +148,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
         setIsCreateModalOpen(false);
         setFreeText('');
         setUsername('');
+        setMessageType('Hi');
       },
       error => {
         if (error.code === error.PERMISSION_DENIED) {
@@ -209,26 +213,20 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
               />
             </div>
             <div className="gender-row">
-              <label className="gender-option">
-                <input
-                  type="radio"
-                  name="gender"
-                  value="Male"
-                  checked={selectedGender === 'Male'}
-                  onChange={event => setSelectedGender(event.target.value)}
-                />
-                <span>Male</span>
-              </label>
-              <label className="gender-option">
-                <input
-                  type="radio"
-                  name="gender"
-                  value="Female"
-                  checked={selectedGender === 'Female'}
-                  onChange={event => setSelectedGender(event.target.value)}
-                />
-                <span>Female</span>
-              </label>
+              <button
+                type="button"
+                className={`gender-badge male ${selectedGender === 'Male' ? 'selected' : ''}`}
+                onClick={() => setSelectedGender('Male')}
+              >
+                Male 👨
+              </button>
+              <button
+                type="button"
+                className={`gender-badge female ${selectedGender === 'Female' ? 'selected' : ''}`}
+                onClick={() => setSelectedGender('Female')}
+              >
+                Female 👩
+              </button>
             </div>
             <div className="textarea-row">
               <textarea
@@ -236,6 +234,22 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
                 onChange={event => setFreeText(event.target.value)}
                 placeholder="You can share something in here..."
               />
+            </div>
+            <div className="message-type-row">
+              <button
+                type="button"
+                className={`message-type-badge ${messageType === 'Hi' ? 'selected' : ''}`}
+                onClick={() => setMessageType('Hi')}
+              >
+                Hi 👋
+              </button>
+              <button
+                type="button"
+                className={`message-type-badge ${messageType === 'Help' ? 'selected' : ''}`}
+                onClick={() => setMessageType('Help')}
+              >
+                Help 🆘
+              </button>
             </div>
             {locationError && <div className="location-error">{locationError}</div>}
             <div className="modal-action-row">
@@ -267,23 +281,16 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
             </div>
             <div className="manual-join-section">
               <p className="modal-description">You already have an active room. Would you like to resume it?</p>
-              <div className="active-room-info">
-                <strong>Topic:</strong> {resumeRoom.topic}
-              </div>
             </div>
             <div className="modal-action-row">
               <button
                 type="button"
                 className="modal-action-button cancel-button"
                 onClick={() => {
-                  window.localStorage.removeItem('pyaw-pyaw-active-room');
                   setResumeRoom(null);
-                  setIsCreateModalOpen(true);
-                  setUsername('');
-                  setFreeText('');
                 }}
               >
-                Create New
+                Cancel
               </button>
               <button
                 type="button"
