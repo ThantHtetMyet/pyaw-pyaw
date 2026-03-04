@@ -461,6 +461,28 @@ code {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
+.map-room-popup-status {
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  text-transform: lowercase;
+  border: 1px solid;
+}
+
+.map-room-popup-status.idle {
+  color: #dafeea;
+  border-color: rgba(88, 230, 140, 0.65);
+  background: rgba(33, 156, 83, 0.35);
+}
+
+.map-room-popup-status.busy {
+  color: #ffe4e9;
+  border-color: rgba(255, 120, 130, 0.75);
+  background: rgba(184, 52, 72, 0.38);
+}
+
 .map-room-popup-message {
   color: rgba(255, 255, 255, 0.95);
   font-size: 0.9rem;

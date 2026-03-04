@@ -55,7 +55,7 @@ export const startMqttBroker = server =>
       try {
         await touchRoom(parsedTopic.roomTopic);
         if (parsedTopic.channel === 'presence') {
-          if (payload?.type === 'join') {
+          if (payload?.type === 'join' && payload?.senderRole === 'guest') {
             await markRoomJoined({
               topic: parsedTopic.roomTopic,
               guestId: payload.clientId || packet.clientId,

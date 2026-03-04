@@ -170,6 +170,7 @@ function MapComponent({
   const [joiningTopic, setJoiningTopic] = useState('');
 
   const isHostRoom = room => Boolean(room?.topic) && Boolean(hostRoomTopic) && room.topic === hostRoomTopic;
+  const getRoomAvailability = room => (room?.availability === 'busy' ? 'busy' : 'idle');
 
   const handleJoinFromMap = async room => {
     if (!room?.topic || joiningTopic) {
@@ -216,6 +217,9 @@ function MapComponent({
               <div className="map-room-popup">
                 <div className="map-room-popup-header">
                   <div className="map-room-popup-username">{createdRoom.username || 'You'}</div>
+                  <span className={`map-room-popup-status ${getRoomAvailability(createdRoom)}`}>
+                    {getRoomAvailability(createdRoom)}
+                  </span>
                 </div>
                 {createdRoom.message ? <div className="map-room-popup-message">{createdRoom.message}</div> : null}
                 <button type="button" className="map-room-popup-join-button" onClick={() => onOpenRoom?.(createdRoom)}>
@@ -231,6 +235,7 @@ function MapComponent({
               <div className="map-room-popup">
                 <div className="map-room-popup-header">
                   <div className="map-room-popup-username">{room.username}</div>
+                  <span className={`map-room-popup-status ${getRoomAvailability(room)}`}>{getRoomAvailability(room)}</span>
                 </div>
                 {room.message ? <div className="map-room-popup-message">{room.message}</div> : null}
                 <button

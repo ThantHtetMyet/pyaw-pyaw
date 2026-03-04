@@ -584,7 +584,7 @@ function App() {
         throw new Error('Room creation failed.');
       }
       const expiresAt = parseExpiresAt(room.expiresAt);
-      setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt });
+      setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt, availability: 'idle' });
       setHostRoomTopic(room.topic);
       setHiddenTopics(prev => {
         if (!prev.has(room.topic)) {
@@ -630,6 +630,7 @@ function App() {
             gender: metadata?.gender || 'Male',
             username: metadata?.username || 'Anonymous',
             messageType: metadata?.messageType || 'Hi',
+            availability: room.lastGuestId ? 'busy' : 'idle',
           };
         })
         .filter(room => !hiddenTopics.has(room.topic));
