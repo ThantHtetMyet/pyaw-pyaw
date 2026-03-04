@@ -41,6 +41,14 @@ function createHandMarkerIcon(gender) {
   });
 }
 
+function hashTopic(topic) {
+  let hash = 0;
+  for (let index = 0; index < topic.length; index += 1) {
+    hash = (hash * 31 + topic.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
 function MapComponent({ createdRoom, locatedPosition, searchedRooms = [], isSearchingRooms }) {
   const defaultPosition = [51.505, -0.09];
   const markerIcon = useMemo(() => {
@@ -58,6 +66,25 @@ function MapComponent({ createdRoom, locatedPosition, searchedRooms = [], isSear
           icon: createHandMarkerIcon(room.gender),
         })),
     [searchedRooms]
+  );
+  const radarDots = useMemo(
+    () =>
+      searchedRoomMarkers.slice(0, 12).map(room => {
+        const seed = hashTopic(room.topic || `${room.lat}-${room.lng}`);
+        const angle = (seed % 360) * (Math.PI / 180);
+        const radius = 22 + (seed % 56);
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        return {
+          key: room.topic,
+          style: {
+            left: `calc(50% + ${x}px)`,
+            top: `calc(50% + ${y}px)`,
+            animationDelay: `${(seed % 8) * 0.18}s`,
+          },
+        };
+      }),
+    [searchedRoomMarkers]
   );
   const locateIcon = useMemo(
     () =>
@@ -91,7 +118,7 @@ function MapComponent({ createdRoom, locatedPosition, searchedRooms = [], isSear
             </Popup>
           </Marker>
         )}
-        {searchedRoomMarkers.map(room => (
+        {!isSearchingRooms && searchedRoomMarkers.map(room => (
           <Marker key={room.topic} position={[room.lat, room.lng]} icon={room.icon}>
             <Popup>
               Room found
@@ -101,11 +128,21 @@ function MapComponent({ createdRoom, locatedPosition, searchedRooms = [], isSear
         ))}
       </MapContainer>
       {isSearchingRooms && (
-        <div className="search-radar-overlay">
-          <div className="search-radar-ring ring-one" />
-          <div className="search-radar-ring ring-two" />
-          <div className="search-radar-ring ring-three" />
-          <div className="search-radar-core" />
+        <div className="scan-modal-backdrop">
+          <div className="scan-modal-panel">
+            <div className="scan-radar">
+              <div className="scan-radar-circle circle-one" />
+              <div className="scan-radar-circle circle-two" />
+              <div className="scan-radar-circle circle-three" />
+              {radarDots.map(dot => (
+                <span key={dot.key} className="scan-radar-dot" style={dot.style} />
+              ))}
+              <div className="scan-radar-center" />
+              <div className="scan-radar-hand" />
+            </div>
+            <div className="scan-modal-title">Scanning Rooms</div>
+            <div className="scan-modal-subtitle">Searching nearby active rooms...</div>
+          </div>
         </div>
       )}
     </div>

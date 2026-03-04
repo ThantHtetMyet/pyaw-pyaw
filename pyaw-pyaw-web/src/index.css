@@ -35,41 +35,129 @@ code {
   position: relative;
 }
 
-.search-radar-overlay {
-  position: absolute;
+.scan-modal-backdrop {
+  position: fixed;
   inset: 0;
-  pointer-events: none;
+  z-index: 1400;
+  background: rgba(8, 12, 22, 0.34);
+  backdrop-filter: blur(3px);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 600;
+  pointer-events: none;
 }
 
-.search-radar-ring {
-  position: absolute;
+.scan-modal-panel {
+  width: min(320px, calc(100% - 32px));
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+  box-shadow: 0 14px 36px rgba(5, 8, 15, 0.35);
+  backdrop-filter: blur(10px);
+  padding: 18px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.scan-radar {
+  width: 180px;
+  height: 180px;
   border-radius: 50%;
-  border: 2px solid rgba(120, 205, 255, 0.65);
-  animation: radarExpand 1.7s ease-out infinite;
+  position: relative;
+  background: radial-gradient(circle at center, rgba(87, 198, 255, 0.24), rgba(8, 12, 18, 0.5) 68%);
+  border: 1px solid rgba(122, 214, 255, 0.32);
+  overflow: hidden;
 }
 
-.search-radar-ring.ring-one {
+.scan-radar-circle {
+  position: absolute;
+  inset: 50%;
+  border-radius: 50%;
+  border: 1.8px solid rgba(122, 214, 255, 0.5);
+  transform: translate(-50%, -50%);
+  animation: scanPulse 2.1s ease-out infinite;
+}
+
+.scan-radar-circle.circle-one {
+  width: 44px;
+  height: 44px;
   animation-delay: 0s;
 }
 
-.search-radar-ring.ring-two {
-  animation-delay: 0.45s;
+.scan-radar-circle.circle-two {
+  width: 96px;
+  height: 96px;
+  animation-delay: 0.26s;
 }
 
-.search-radar-ring.ring-three {
-  animation-delay: 0.9s;
+@keyframes scanDotBlink {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.25);
+  }
 }
 
-.search-radar-core {
+.scan-radar-circle.circle-three {
+  width: 148px;
+  height: 148px;
+  animation-delay: 0.52s;
+}
+
+.scan-radar-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: #7ad6ff;
+  box-shadow: 0 0 8px rgba(122, 214, 255, 0.9);
+  animation: scanDotBlink 1.2s ease-in-out infinite;
+}
+
+.scan-radar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  transform: translate(-50%, -50%);
   background: #7ad6ff;
-  box-shadow: 0 0 0 6px rgba(122, 214, 255, 0.25);
+  box-shadow: 0 0 0 6px rgba(122, 214, 255, 0.18);
+  z-index: 2;
+}
+
+.scan-radar-hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 76px;
+  transform-origin: center bottom;
+  transform: translate(-50%, -100%);
+  border-radius: 999px;
+  background: linear-gradient(to top, rgba(122, 214, 255, 0.1), rgba(122, 214, 255, 0.95));
+  box-shadow: 0 0 14px rgba(122, 214, 255, 0.55);
+  animation: scanSweep 1.35s linear infinite;
+}
+
+.scan-modal-title {
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.scan-modal-subtitle {
+  color: rgba(231, 245, 255, 0.88);
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .user-hand-marker {
@@ -138,16 +226,22 @@ code {
   }
 }
 
-@keyframes radarExpand {
-  0% {
-    width: 34px;
-    height: 34px;
+@keyframes scanPulse {
+  0%,
+  100% {
     opacity: 0.82;
   }
+  50% {
+    opacity: 0.32;
+  }
+}
+
+@keyframes scanSweep {
+  0% {
+    transform: translate(-50%, -100%) rotate(0deg);
+  }
   100% {
-    width: 220px;
-    height: 220px;
-    opacity: 0;
+    transform: translate(-50%, -100%) rotate(360deg);
   }
 }
 

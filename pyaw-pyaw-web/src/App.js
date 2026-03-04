@@ -6,6 +6,7 @@ import MenuButton from './components/MenuButton/MenuButton';
 const DEFAULT_SESSION_MS = 5 * 60 * 1000;
 const DEFAULT_API_BASE_URL = 'https://pyaw-pyaw-api.onrender.com';
 const CLIENT_ID_KEY = 'pyaw-pyaw-client-id';
+const MIN_SCAN_VISIBILITY_MS = 15 * 1000;
 
 function normalizeBaseUrl(urlText) {
   return (urlText || '').trim().replace(/\/+$/, '');
@@ -367,6 +368,7 @@ function App() {
   };
 
   const handleSearchRooms = async () => {
+    const startedAt = Date.now();
     setIsSearchingRooms(true);
     try {
       const response = await requestJson('/api/rooms/active');
@@ -385,6 +387,10 @@ function App() {
       setSearchedRooms(mappedRooms.filter(room => Number.isFinite(room.lat) && Number.isFinite(room.lng)));
       return mappedRooms;
     } finally {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < MIN_SCAN_VISIBILITY_MS) {
+        await new Promise(resolve => window.setTimeout(resolve, MIN_SCAN_VISIBILITY_MS - elapsed));
+      }
       setIsSearchingRooms(false);
     }
   };

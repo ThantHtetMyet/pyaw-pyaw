@@ -1,19 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './MenuButton.css';
 
-function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
+function MenuButton({ onCreateRoom, onSearchRooms, onLocate }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const [searchedRooms, setSearchedRooms] = useState([]);
-  const [manualJoinValue, setManualJoinValue] = useState('');
-  const [searchError, setSearchError] = useState('');
   const [selectedGender, setSelectedGender] = useState('Male');
   const [freeText, setFreeText] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
-  const [isSearchingRooms, setIsSearchingRooms] = useState(false);
-  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [locationError, setLocationError] = useState('');
   const containerRef = useRef(null);
   
@@ -53,92 +47,12 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
 
   const handleSearchClick = async () => {
     setIsOpen(false);
-    setIsSearchModalOpen(true);
-    setManualJoinValue('');
-    setSearchError('');
-    setIsSearchingRooms(true);
+    setLocationError('');
     try {
-      const rooms = await onSearchRooms?.();
-      setSearchedRooms(Array.isArray(rooms) ? rooms : []);
+      await onSearchRooms?.();
     } catch (error) {
-      setSearchedRooms([]);
-      setSearchError(error?.message || 'Unable to load active rooms.');
-    } finally {
-      setIsSearchingRooms(false);
+      setLocationError(error?.message || 'Unable to scan active rooms.');
     }
-  };
-
-  const handleCloseSearchModal = () => {
-    setManualJoinValue('');
-    setSearchError('');
-    setIsSearchModalOpen(false);
-  };
-
-  const handleJoinRoom = async room => {
-    setIsJoiningRoom(true);
-    try {
-      const joined = await onJoinRoom?.(room);
-      if (joined === false) {
-        return;
-      }
-      setManualJoinValue('');
-      setSearchError('');
-      setIsSearchModalOpen(false);
-    } finally {
-      setIsJoiningRoom(false);
-    }
-  };
-
-  const parseJoinPayload = rawValue => {
-    const value = rawValue.trim();
-    if (!value) {
-      return null;
-    }
-
-    let topic = '';
-    let sessionExpiresAt = NaN;
-    const applyParams = params => {
-      const roomTopic = params.get('roomTopic');
-      const expiresAt = Number(params.get('sessionExpiresAt'));
-      if (roomTopic) {
-        topic = decodeURIComponent(roomTopic);
-      }
-      if (Number.isFinite(expiresAt)) {
-        sessionExpiresAt = expiresAt;
-      }
-    };
-
-    if (value.startsWith('room/')) {
-      topic = value;
-    } else {
-      try {
-        const parsedUrl = new URL(value);
-        applyParams(parsedUrl.searchParams);
-      } catch (error) {
-        const params = new URLSearchParams(value.startsWith('?') ? value : `?${value}`);
-        applyParams(params);
-      }
-    }
-
-    if (!topic) {
-      return null;
-    }
-
-    const fallbackExpiry = Date.now() + 5 * 60 * 1000;
-    return {
-      topic,
-      sessionExpiresAt: sessionExpiresAt > Date.now() ? sessionExpiresAt : fallbackExpiry,
-    };
-  };
-
-  const handleManualJoin = async () => {
-    const room = parseJoinPayload(manualJoinValue);
-    if (!room) {
-      setSearchError('Paste a valid room link or room topic.');
-      return;
-    }
-    setSearchError('');
-    await handleJoinRoom(room);
   };
 
   const handleLocateClick = () => {
@@ -240,7 +154,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
           </span>
         </div>
         {isLocating && <div className="locate-status">Locating...</div>}
-        {!isCreateModalOpen && !isSearchModalOpen && locationError && <div className="locate-status error">{locationError}</div>}
+        {!isCreateModalOpen && locationError && <div className="locate-status error">{locationError}</div>}
       </div>
       {isCreateModalOpen && (
         <div className="glass-modal-backdrop" onClick={handleCloseModal}>
@@ -294,55 +208,6 @@ function MenuButton({ onCreateRoom, onSearchRooms, onJoinRoom, onLocate }) {
                 disabled={isGettingLocation}
               >
                 {isGettingLocation ? 'Getting Location...' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {isSearchModalOpen && (
-        <div className="glass-modal-backdrop" onClick={handleCloseSearchModal}>
-          <div className="glass-modal search-modal" onClick={event => event.stopPropagation()}>
-            <div className="modal-header-row">
-              <h3 className="modal-title">Active Rooms</h3>
-            </div>
-            <div className="search-room-list">
-              {isSearchingRooms && <div className="search-empty">Loading active rooms...</div>}
-              {!isSearchingRooms && searchedRooms.length === 0 && <div className="search-empty">No active room found right now.</div>}
-              {searchedRooms.map(room => (
-                <div className="search-room-item" key={room.topic}>
-                  <div className="search-room-text">{room.message || 'No shared message.'}</div>
-                  <button
-                    type="button"
-                    className="modal-action-button create-button"
-                    onClick={() => handleJoinRoom(room)}
-                    disabled={isJoiningRoom}
-                  >
-                    Join
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="manual-join-section">
-              <input
-                type="text"
-                className="manual-join-input"
-                value={manualJoinValue}
-                onChange={event => setManualJoinValue(event.target.value)}
-                placeholder="Paste room link or room topic"
-              />
-              {searchError && <div className="location-error">{searchError}</div>}
-            </div>
-            <div className="modal-action-row">
-              <button
-                type="button"
-                className="modal-action-button create-button"
-                onClick={handleManualJoin}
-                disabled={isJoiningRoom}
-              >
-                Join by Link
-              </button>
-              <button type="button" className="modal-action-button cancel-button" onClick={handleCloseSearchModal}>
-                Close
               </button>
             </div>
           </div>
