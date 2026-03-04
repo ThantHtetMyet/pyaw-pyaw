@@ -1,7 +1,5 @@
-import { createServer } from 'http';
 import Aedes from 'aedes';
 import { WebSocketServer, createWebSocketStream } from 'ws';
-import { config } from './config.js';
 import { insertRoomMessage, markRoomJoined, touchRoom } from './roomService.js';
 
 const parseJson = value => {
@@ -23,11 +21,15 @@ const parseTopic = topic => {
   };
 };
 
-export const startMqttBroker = () =>
+export const startMqttBroker = server =>
   new Promise((resolve, reject) => {
+    if (!server) {
+      reject(new Error('HTTP server is required for MQTT broker startup'));
+      return;
+    }
+
     const broker = new Aedes();
-    const httpServer = createServer();
-    const wsServer = new WebSocketServer({ server: httpServer, path: '/mqtt' });
+    const wsServer = new WebSocketServer({ server, path: '/mqtt' });
 
     wsServer.on('connection', stream => {
       const duplexStream = createWebSocketStream(stream);
@@ -76,21 +78,17 @@ export const startMqttBroker = () =>
       }
     });
 
-    httpServer.listen(config.mqttWsPort, () => {
-      resolve({
-        broker,
-        wsServer,
-        httpServer,
-        close: () =>
-          new Promise(closeResolve => {
-            wsServer.close(() => {
-              broker.close(() => {
-                httpServer.close(() => closeResolve());
-              });
+    resolve({
+      broker,
+      wsServer,
+      close: () =>
+        new Promise(closeResolve => {
+          wsServer.close(() => {
+            broker.close(() => {
+              closeResolve();
             });
-          }),
-      });
+          });
+        }),
     });
-
-    httpServer.on('error', reject);
+    wsServer.on('error', reject);
   });

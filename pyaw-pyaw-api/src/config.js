@@ -9,7 +9,6 @@ const toNumber = (value, fallback) => {
 
 export const config = {
   port: toNumber(process.env.PORT, 4000),
-  mqttWsPort: toNumber(process.env.MQTT_WS_PORT, 4001),
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '',
   roomTtlSeconds: toNumber(process.env.ROOM_TTL_SECONDS, 300),

@@ -1,17 +1,18 @@
 import { createApp } from './app.js';
 import { assertRequiredConfig, config } from './config.js';
 import { startMqttBroker } from './mqttBroker.js';
+import { createServer } from 'http';
 
 const bootstrap = async () => {
   assertRequiredConfig();
 
   const app = createApp();
-  const httpServer = app.listen(config.port, () => {
+  const httpServer = createServer(app);
+  const mqttServer = await startMqttBroker(httpServer);
+  httpServer.listen(config.port, () => {
     console.log(`HTTP API listening on port ${config.port}`);
+    console.log(`MQTT over WebSocket listening on /mqtt via port ${config.port}`);
   });
-
-  const mqttServer = await startMqttBroker();
-  console.log(`MQTT over WebSocket listening on port ${config.mqttWsPort}`);
 
   const shutdown = async () => {
     await mqttServer.close();

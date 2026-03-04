@@ -74,12 +74,11 @@ export const createApp = () => {
 
   app.get('/api/mqtt/config', (req, res) => {
     const host = req.get('host') || `localhost:${process.env.PORT || 4000}`;
-    const wsHost = host.includes(':')
-      ? `${host.split(':')[0]}:${process.env.MQTT_WS_PORT || 4001}`
-      : `${host}:${process.env.MQTT_WS_PORT || 4001}`;
+    const forwardedProto = req.get('x-forwarded-proto');
+    const protocol = forwardedProto === 'https' || req.protocol === 'https' ? 'wss' : 'ws';
     res.json({
-      protocol: 'ws',
-      host: wsHost,
+      protocol,
+      host,
       path: '/mqtt',
       roomTopicPrefix: 'room/{room-id}',
       channels: ['presence', 'chat'],

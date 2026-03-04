@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: pyaw-pyaw-api
+    rootDir: pyaw-pyaw-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PORT
+        value: 4000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: ROOM_TTL_SECONDS
+        value: 300
