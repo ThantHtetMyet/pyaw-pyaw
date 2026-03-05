@@ -652,14 +652,6 @@ code {
   background: radial-gradient(circle, rgba(255, 162, 215, 0.5), rgba(255, 86, 170, 0.08) 70%);
 }
 
-.user-hand-marker.status-idle .marker-hand-halo {
-  box-shadow: 0 0 0 2px rgba(41, 184, 111, 0.95), 0 0 14px rgba(41, 184, 111, 0.55);
-}
-
-.user-hand-marker.status-busy .marker-hand-halo {
-  box-shadow: 0 0 0 2px rgba(222, 77, 95, 0.98), 0 0 14px rgba(222, 77, 95, 0.6);
-}
-
 .marker-hand-svg {
   position: relative;
   z-index: 2;
@@ -1016,19 +1008,24 @@ code {
 
 @media (max-width: 768px) {
   .room-tab-page {
-    align-items: stretch;
-    justify-content: flex-start;
-    padding: 10px 10px calc(10px + var(--keyboard-inset, 0px));
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px calc(8px + var(--keyboard-inset, 0px));
   }
 
   .room-panel {
-    height: 100%;
-    max-height: 100%;
-    padding: 14px;
+    max-height: calc(100dvh - 16px - var(--keyboard-inset, 0px));
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .chat-box {
+    flex: 0 1 auto;
   }
 
   .chat-messages {
-    min-height: 140px;
+    min-height: 180px;
+    max-height: min(48dvh, 360px);
   }
 
   .chat-input-row {

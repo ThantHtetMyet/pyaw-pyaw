@@ -8,6 +8,14 @@ function MapRecenter({ createdRoom, locatedPosition }) {
   const lastCenterKeyRef = useRef('');
   const hasAutoLocatedRef = useRef(false);
   const target = useMemo(() => {
+    const isManualLocate = locatedPosition?.trigger === 'menu-locate';
+    if (isManualLocate && Number.isFinite(locatedPosition?.lat) && Number.isFinite(locatedPosition?.lng)) {
+      return {
+        key: `locate-manual-${locatedPosition.locatedAt || `${locatedPosition.lat},${locatedPosition.lng}`}`,
+        position: [locatedPosition.lat, locatedPosition.lng],
+        source: 'locate',
+      };
+    }
     if (createdRoom && Number.isFinite(createdRoom.lat) && Number.isFinite(createdRoom.lng)) {
       const roomKey = createdRoom.topic || createdRoom.createdAt || `${createdRoom.lat},${createdRoom.lng}`;
       return {
@@ -75,6 +83,7 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
   const isFemale = gender === 'Female';
   const genderClass = isFemale ? 'female' : 'male';
   const availabilityClass = availability === 'busy' ? 'status-busy' : 'status-idle';
+  const statusStroke = availability === 'busy' ? '#de4d5f' : '#29b86f';
   const color = isFemale ? '#ff56aa' : '#38a8ff';
   
   if (messageType === 'Help') {
@@ -84,7 +93,7 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
               <div class="marker-pulse"></div>
               <div class="marker-hand-halo"></div>
               <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="${helpPath}" fill="${color}" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+                <path d="${helpPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
               </svg>
              </div>`,
       className: 'user-hand-marker-wrapper',
@@ -101,7 +110,7 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
             <div class="marker-pulse"></div>
             <div class="marker-hand-halo"></div>
             <svg class="marker-hand-svg chat-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="${chatPath}" fill="${color}" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+              <path d="${chatPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
               <circle cx="9" cy="9.4" r="1.15" fill="#ffffff" />
               <circle cx="12" cy="9.4" r="1.15" fill="#ffffff" />
               <circle cx="15" cy="9.4" r="1.15" fill="#ffffff" />

@@ -140,6 +140,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           locatedAt: Date.now(),
+          trigger: 'menu-locate',
         });
         setIsLocating(false);
         setLocationError('');
