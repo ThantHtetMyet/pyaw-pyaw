@@ -652,6 +652,14 @@ code {
   background: radial-gradient(circle, rgba(255, 162, 215, 0.5), rgba(255, 86, 170, 0.08) 70%);
 }
 
+.user-hand-marker.status-idle .marker-hand-halo {
+  box-shadow: 0 0 0 2px rgba(41, 184, 111, 0.95), 0 0 14px rgba(41, 184, 111, 0.55);
+}
+
+.user-hand-marker.status-busy .marker-hand-halo {
+  box-shadow: 0 0 0 2px rgba(222, 77, 95, 0.98), 0 0 14px rgba(222, 77, 95, 0.6);
+}
+
 .marker-hand-svg {
   position: relative;
   z-index: 2;

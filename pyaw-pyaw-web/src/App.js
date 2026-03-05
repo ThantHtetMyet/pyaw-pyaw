@@ -247,6 +247,31 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   }, [isWaiting, isExpired, showChatInterface]);
 
   useEffect(() => {
+    if (!isHostRole) {
+      return undefined;
+    }
+    let isCancelled = false;
+    const syncInitialHostPresence = async () => {
+      try {
+        const response = await requestJson('/api/rooms/active');
+        if (isCancelled) {
+          return;
+        }
+        const activeRoom = (response?.rooms || []).find(room => room?.topic === topic);
+        if (activeRoom?.lastGuestId) {
+          setIsPeerJoined(true);
+          setShowChatInterface(true);
+        }
+      } catch {
+      }
+    };
+    syncInitialHostPresence();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isHostRole, topic]);
+
+  useEffect(() => {
     let isUnmounted = false;
     let mqttClient;
 
@@ -776,6 +801,22 @@ function App() {
     const mappedRooms = mapActiveRooms(response?.rooms);
     setScanResult(mappedRooms.length > 0 ? 'found' : 'empty');
     setSearchedRooms(mappedRooms.filter(room => Number.isFinite(room.lat) && Number.isFinite(room.lng)));
+    setCreatedRoom(prev => {
+      if (!prev?.topic) {
+        return prev;
+      }
+      const matchedRoom = mappedRooms.find(room => room.topic === prev.topic);
+      if (!matchedRoom) {
+        return prev;
+      }
+      if (prev.availability === matchedRoom.availability) {
+        return prev;
+      }
+      return {
+        ...prev,
+        availability: matchedRoom.availability,
+      };
+    });
     return mappedRooms;
   }, [mapActiveRooms]);
 

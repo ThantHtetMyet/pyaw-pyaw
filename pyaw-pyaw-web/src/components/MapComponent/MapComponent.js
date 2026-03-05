@@ -1,36 +1,48 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
-function MapRecenter({ createdRoom, locatedPosition, searchedRooms }) {
+function MapRecenter({ createdRoom, locatedPosition }) {
   const map = useMap();
-  const targetPosition = useMemo(() => {
-    const roomTime = createdRoom?.createdAt || 0;
-    const locateTime = locatedPosition?.locatedAt || 0;
-    if (!createdRoom && !locatedPosition) {
-      if (searchedRooms.length > 0) {
-        return [searchedRooms[0].lat, searchedRooms[0].lng];
-      }
+  const lastCenterKeyRef = useRef('');
+  const hasAutoLocatedRef = useRef(false);
+  const target = useMemo(() => {
+    if (createdRoom && Number.isFinite(createdRoom.lat) && Number.isFinite(createdRoom.lng)) {
+      const roomKey = createdRoom.topic || createdRoom.createdAt || `${createdRoom.lat},${createdRoom.lng}`;
+      return {
+        key: `created-${roomKey}`,
+        position: [createdRoom.lat, createdRoom.lng],
+      };
+    }
+    if (!locatedPosition || hasAutoLocatedRef.current) {
       return null;
     }
-    if (locateTime >= roomTime && locatedPosition) {
-      return [locatedPosition.lat, locatedPosition.lng];
-    }
-    return [createdRoom.lat, createdRoom.lng];
-  }, [createdRoom, locatedPosition, searchedRooms]);
+    return {
+      key: `locate-initial-${locatedPosition.locatedAt || `${locatedPosition.lat},${locatedPosition.lng}`}`,
+      position: [locatedPosition.lat, locatedPosition.lng],
+      source: 'locate',
+    };
+  }, [createdRoom, locatedPosition]);
 
   useEffect(() => {
-    if (!targetPosition) {
+    if (!target) {
       return;
     }
-    map.flyTo(targetPosition, 16, { duration: 1.1 });
-  }, [targetPosition, map]);
+    if (lastCenterKeyRef.current === target.key) {
+      return;
+    }
+    lastCenterKeyRef.current = target.key;
+    map.flyTo(target.position, 16, { duration: 1.1 });
+    if (target.source === 'locate') {
+      hasAutoLocatedRef.current = true;
+    }
+  }, [target, map]);
 
   return null;
 }
 
-function MapResizeSync({ createdRoom, locatedPosition, searchedRoomsCount, isSearchingRooms }) {
+function MapResizeSync() {
   const map = useMap();
 
   useEffect(() => {
@@ -54,20 +66,21 @@ function MapResizeSync({ createdRoom, locatedPosition, searchedRoomsCount, isSea
       window.removeEventListener('orientationchange', resizeBurst);
       window.removeEventListener('pyaw-pyaw-layout-change', resizeBurst);
     };
-  }, [map, createdRoom, locatedPosition, searchedRoomsCount, isSearchingRooms]);
+  }, [map]);
 
   return null;
 }
 
-function createMessageMarkerIcon(gender, messageType) {
+function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
   const isFemale = gender === 'Female';
   const genderClass = isFemale ? 'female' : 'male';
+  const availabilityClass = availability === 'busy' ? 'status-busy' : 'status-idle';
   const color = isFemale ? '#ff56aa' : '#38a8ff';
   
   if (messageType === 'Help') {
     const helpPath = "M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10s10-4.48,10-10S17.52,2,12,2z M12,20c-4.41,0-8-3.59-8-8s3.59-8,8-8 s8,3.59,8,8S16.41,20,12,20z M12,6c-3.31,0-6,2.69-6,6s2.69,6,6,6s6-2.69,6-6S15.31,6,12,6z";
     return L.divIcon({
-      html: `<div class="user-hand-marker ${genderClass} help-marker">
+      html: `<div class="user-hand-marker ${genderClass} ${availabilityClass} help-marker">
               <div class="marker-pulse"></div>
               <div class="marker-hand-halo"></div>
               <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -84,7 +97,7 @@ function createMessageMarkerIcon(gender, messageType) {
   const chatPath = "M4,5.5C4,4.12,5.12,3,6.5,3h11C18.88,3,20,4.12,20,5.5v7c0,1.38-1.12,2.5-2.5,2.5H11l-4.2,3.7c-0.74,0.65-1.9,0.12-1.9-0.86V15.2C4.37,14.76,4,14.17,4,13.5V5.5z";
 
   return L.divIcon({
-    html: `<div class="user-hand-marker ${genderClass}">
+    html: `<div class="user-hand-marker ${genderClass} ${availabilityClass}">
             <div class="marker-pulse"></div>
             <div class="marker-hand-halo"></div>
             <svg class="marker-hand-svg chat-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -126,7 +139,7 @@ function MapComponent({
     if (!createdRoom) {
       return null;
     }
-    return createMessageMarkerIcon(createdRoom.gender, createdRoom.messageType);
+    return createMessageMarkerIcon(createdRoom.gender, createdRoom.messageType, createdRoom.availability);
   }, [createdRoom]);
   const searchedRoomMarkers = useMemo(
     () =>
@@ -134,7 +147,7 @@ function MapComponent({
         .filter(room => Number.isFinite(room?.lat) && Number.isFinite(room?.lng))
         .map(room => ({
           ...room,
-          icon: createMessageMarkerIcon(room.gender, room.messageType),
+          icon: createMessageMarkerIcon(room.gender, room.messageType, room.availability),
         })),
     [searchedRooms]
   );
@@ -200,13 +213,8 @@ function MapComponent({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MapResizeSync
-          createdRoom={createdRoom}
-          locatedPosition={locatedPosition}
-          searchedRoomsCount={searchedRoomMarkers.length}
-          isSearchingRooms={isSearchingRooms}
-        />
-        <MapRecenter createdRoom={createdRoom} locatedPosition={locatedPosition} searchedRooms={searchedRoomMarkers} />
+        <MapResizeSync />
+        <MapRecenter createdRoom={createdRoom} locatedPosition={locatedPosition} />
         {locatedPosition && (
           <Marker position={[locatedPosition.lat, locatedPosition.lng]} icon={locateIcon}>
             <Popup>Your current location</Popup>
