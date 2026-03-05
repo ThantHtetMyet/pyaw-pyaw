@@ -93,7 +93,8 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
               <div class="marker-pulse"></div>
               <div class="marker-hand-halo"></div>
               <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="${helpPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
+                <path class="marker-border-base" d="${helpPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
+                <path class="marker-border-ray" d="${helpPath}" fill="none" stroke="${statusStroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="22 78" stroke-dashoffset="0" pathLength="100" />
               </svg>
              </div>`,
       className: 'user-hand-marker-wrapper',
@@ -110,7 +111,8 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
             <div class="marker-pulse"></div>
             <div class="marker-hand-halo"></div>
             <svg class="marker-hand-svg chat-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="${chatPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
+              <path class="marker-border-base" d="${chatPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
+              <path class="marker-border-ray" d="${chatPath}" fill="none" stroke="${statusStroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="22 78" stroke-dashoffset="0" pathLength="100" />
               <circle cx="9" cy="9.4" r="1.15" fill="#ffffff" />
               <circle cx="12" cy="9.4" r="1.15" fill="#ffffff" />
               <circle cx="15" cy="9.4" r="1.15" fill="#ffffff" />

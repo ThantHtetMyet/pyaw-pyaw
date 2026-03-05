@@ -663,6 +663,15 @@ code {
   overflow: visible;
 }
 
+.marker-border-base {
+  opacity: 0.9;
+}
+
+.marker-border-ray {
+  animation: markerBorderRay 1.6s linear infinite;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
 .marker-hand-svg.help-svg {
   animation: none;
 }
@@ -709,6 +718,20 @@ code {
   100% {
     transform: translateX(-50%) scale(3.5);
     opacity: 0;
+  }
+}
+
+@keyframes markerBorderRay {
+  0% {
+    stroke-dashoffset: 0;
+    opacity: 0.25;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0.2;
   }
 }
 
