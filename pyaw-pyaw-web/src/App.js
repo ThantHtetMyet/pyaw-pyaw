@@ -927,9 +927,9 @@ function App() {
         setHostRoomTopic('');
         window.localStorage.removeItem('pyaw-pyaw-active-room');
       }
-      handleSearchRooms();
+      refreshRoomsSilently().catch(() => {});
     },
-    [handleSearchRooms, hideRoomTopic]
+    [hideRoomTopic, refreshRoomsSilently]
   );
 
   const handleLocate = position => {
@@ -967,13 +967,13 @@ function App() {
       if (event.data?.topic) {
         setActiveChatRoom(prev => (prev?.topic === event.data.topic ? null : prev));
       }
-      handleSearchRooms();
+      refreshRoomsSilently().catch(() => {});
     };
     window.addEventListener('message', handleRoomExitMessage);
     return () => {
       window.removeEventListener('message', handleRoomExitMessage);
     };
-  }, [handleSearchRooms, hideRoomTopic]);
+  }, [hideRoomTopic, refreshRoomsSilently]);
 
   useEffect(() => {
     const handleStorage = event => {
@@ -992,7 +992,7 @@ function App() {
         }
         setHostRoomTopic('');
         window.localStorage.removeItem('pyaw-pyaw-active-room');
-        handleSearchRooms();
+        refreshRoomsSilently().catch(() => {});
       } catch {
       }
     };
@@ -1001,7 +1001,7 @@ function App() {
     return () => {
       window.removeEventListener('storage', handleStorage);
     };
-  }, [handleSearchRooms, hideRoomTopic]);
+  }, [hideRoomTopic, refreshRoomsSilently]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {

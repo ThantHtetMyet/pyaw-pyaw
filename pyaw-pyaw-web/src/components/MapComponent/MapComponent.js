@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
 function MapRecenter({ createdRoom, locatedPosition }) {
@@ -79,23 +79,32 @@ function MapResizeSync() {
   return null;
 }
 
+function MapOutsideClickClose({ enabled, onOutsideClose }) {
+  useMapEvents({
+    click() {
+      if (enabled) {
+        onOutsideClose();
+      }
+    },
+  });
+
+  return null;
+}
+
 function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
   const isFemale = gender === 'Female';
   const genderClass = isFemale ? 'female' : 'male';
   const availabilityClass = availability === 'busy' ? 'status-busy' : 'status-idle';
-  const statusStroke = availability === 'busy' ? '#de4d5f' : '#29b86f';
-  const color = isFemale ? '#ff56aa' : '#38a8ff';
-  
+
   if (messageType === 'Help') {
     const helpPath = "M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10s10-4.48,10-10S17.52,2,12,2z M12,20c-4.41,0-8-3.59-8-8s3.59-8,8-8 s8,3.59,8,8S16.41,20,12,20z M12,6c-3.31,0-6,2.69-6,6s2.69,6,6,6s6-2.69,6-6S15.31,6,12,6z";
     return L.divIcon({
       html: `<div class="user-hand-marker ${genderClass} ${availabilityClass} help-marker">
-              <div class="marker-pulse"></div>
-              <div class="marker-hand-halo"></div>
-              <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path class="marker-border-base" d="${helpPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
-                <path class="marker-border-ray" d="${helpPath}" fill="none" stroke="${statusStroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="22 78" stroke-dashoffset="0" pathLength="100" />
-              </svg>
+              <div class="marker-hand-halo">
+                <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path class="marker-border-base" d="${helpPath}" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round" />
+                </svg>
+              </div>
              </div>`,
       className: 'user-hand-marker-wrapper',
       iconSize: [64, 64],
@@ -108,15 +117,14 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
 
   return L.divIcon({
     html: `<div class="user-hand-marker ${genderClass} ${availabilityClass}">
-            <div class="marker-pulse"></div>
-            <div class="marker-hand-halo"></div>
-            <svg class="marker-hand-svg chat-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path class="marker-border-base" d="${chatPath}" fill="${color}" stroke="${statusStroke}" stroke-width="1.2" stroke-linejoin="round" />
-              <path class="marker-border-ray" d="${chatPath}" fill="none" stroke="${statusStroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="22 78" stroke-dashoffset="0" pathLength="100" />
-              <circle cx="9" cy="9.4" r="1.15" fill="#ffffff" />
-              <circle cx="12" cy="9.4" r="1.15" fill="#ffffff" />
-              <circle cx="15" cy="9.4" r="1.15" fill="#ffffff" />
-            </svg>
+            <div class="marker-hand-halo">
+              <svg class="marker-hand-svg chat-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path class="marker-border-base" d="${chatPath}" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round" />
+                <circle cx="9" cy="9.4" r="1.15" fill="#ffffff" />
+                <circle cx="12" cy="9.4" r="1.15" fill="#ffffff" />
+                <circle cx="15" cy="9.4" r="1.15" fill="#ffffff" />
+              </svg>
+            </div>
            </div>`,
     className: 'user-hand-marker-wrapper',
     iconSize: [64, 64],
@@ -131,6 +139,18 @@ function hashTopic(topic) {
     hash = (hash * 31 + topic.charCodeAt(index)) >>> 0;
   }
   return hash;
+}
+
+function getDistanceMeters(left, right) {
+  const lat1 = (left.lat * Math.PI) / 180;
+  const lat2 = (right.lat * Math.PI) / 180;
+  const latDiff = lat2 - lat1;
+  const lngDiff = ((right.lng - left.lng) * Math.PI) / 180;
+  const sinLat = Math.sin(latDiff / 2);
+  const sinLng = Math.sin(lngDiff / 2);
+  const a = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return 6371000 * c;
 }
 
 function MapComponent({
@@ -152,19 +172,83 @@ function MapComponent({
     }
     return createMessageMarkerIcon(createdRoom.gender, createdRoom.messageType, createdRoom.availability);
   }, [createdRoom]);
-  const searchedRoomMarkers = useMemo(
+  const validSearchedRooms = useMemo(
     () =>
-      searchedRooms
-        .filter(room => Number.isFinite(room?.lat) && Number.isFinite(room?.lng))
-        .map(room => ({
-          ...room,
-          icon: createMessageMarkerIcon(room.gender, room.messageType, room.availability),
-        })),
-    [searchedRooms]
+      searchedRooms.filter(room => {
+        if (!Number.isFinite(room?.lat) || !Number.isFinite(room?.lng)) {
+          return false;
+        }
+        if (createdRoom?.topic && room?.topic === createdRoom.topic) {
+          return false;
+        }
+        if (hostRoomTopic && room?.topic === hostRoomTopic) {
+          return false;
+        }
+        return true;
+      }),
+    [searchedRooms, createdRoom?.topic, hostRoomTopic]
   );
+  const searchedRoomMarkers = useMemo(() => {
+    const overlapRadiusMeters = 7.5;
+    const orderedRooms = [...validSearchedRooms].sort((left, right) => {
+      const latDiff = left.lat - right.lat;
+      if (latDiff !== 0) {
+        return latDiff;
+      }
+      const lngDiff = left.lng - right.lng;
+      if (lngDiff !== 0) {
+        return lngDiff;
+      }
+      return String(left.topic || '').localeCompare(String(right.topic || ''));
+    });
+    const groupedByArea = [];
+    orderedRooms.forEach(room => {
+      const targetGroup = groupedByArea.find(group =>
+        group.rooms.some(member => getDistanceMeters(member, room) <= overlapRadiusMeters)
+      );
+      if (targetGroup) {
+        targetGroup.rooms.push(room);
+        return;
+      }
+      groupedByArea.push({ rooms: [room] });
+    });
+
+    return groupedByArea.flatMap(group => {
+      const orderedGroup = [...group.rooms].sort((left, right) =>
+        String(left.topic || '').localeCompare(String(right.topic || ''))
+      );
+
+      if (orderedGroup.length === 1) {
+        const room = orderedGroup[0];
+        return [{
+          ...room,
+          displayLat: room.lat,
+          displayLng: room.lng,
+          icon: createMessageMarkerIcon(room.gender, room.messageType, room.availability),
+        }];
+      }
+
+      return orderedGroup.map((room, index) => {
+        const seed = hashTopic(room.topic || `${room.lat}-${room.lng}-${index}`);
+        const angleInRadians = ((index * 77 + (seed % 41)) * Math.PI) / 180;
+        const distanceInMeters = 1 + ((seed % 3) * 0.5);
+        const latOffset = (distanceInMeters / 111320) * Math.sin(angleInRadians);
+        const safeCos = Math.max(Math.cos((room.lat * Math.PI) / 180), 0.2);
+        const lngOffset = (distanceInMeters / (111320 * safeCos)) * Math.cos(angleInRadians);
+
+        return {
+          ...room,
+          displayLat: room.lat + latOffset,
+          displayLng: room.lng + lngOffset,
+          overlapRooms: orderedGroup,
+          icon: createMessageMarkerIcon(room.gender, room.messageType, room.availability),
+        };
+      });
+    });
+  }, [validSearchedRooms]);
   const radarDots = useMemo(
     () =>
-      searchedRoomMarkers.slice(0, 12).map(room => {
+      validSearchedRooms.slice(0, 12).map(room => {
         const seed = hashTopic(room.topic || `${room.lat}-${room.lng}`);
         const angle = (seed % 360) * (Math.PI / 180);
         const radius = 22 + (seed % 56);
@@ -179,7 +263,7 @@ function MapComponent({
           },
         };
       }),
-    [searchedRoomMarkers]
+    [validSearchedRooms]
   );
   const locateIcon = useMemo(
     () =>
@@ -192,10 +276,21 @@ function MapComponent({
     []
   );
   const [joiningTopic, setJoiningTopic] = useState('');
+  const [pinnedOverlapKey, setPinnedOverlapKey] = useState('');
+  const overlapMarkerRefs = useRef(new Map());
 
   const isHostRoom = room => Boolean(room?.topic) && Boolean(hostRoomTopic) && room.topic === hostRoomTopic;
   const getRoomAvailability = room => (room?.availability === 'busy' ? 'busy' : 'idle');
   const isBusyRoom = room => getRoomAvailability(room) === 'busy';
+  const closePinnedOverlapPopup = useCallback(() => {
+    setPinnedOverlapKey(currentPinnedKey => {
+      if (currentPinnedKey) {
+        const marker = overlapMarkerRefs.current.get(currentPinnedKey);
+        marker?.closePopup?.();
+      }
+      return '';
+    });
+  }, []);
 
   const handleJoinFromMap = async room => {
     if (!room?.topic || joiningTopic || isBusyRoom(room)) {
@@ -226,6 +321,7 @@ function MapComponent({
         />
         <MapResizeSync />
         <MapRecenter createdRoom={createdRoom} locatedPosition={locatedPosition} />
+        <MapOutsideClickClose enabled={Boolean(pinnedOverlapKey)} onOutsideClose={closePinnedOverlapPopup} />
         {locatedPosition && (
           <Marker position={[locatedPosition.lat, locatedPosition.lng]} icon={locateIcon}>
             <Popup>Your current location</Popup>
@@ -249,27 +345,107 @@ function MapComponent({
             </Popup>
           </Marker>
         )}
-        {!isSearchingRooms && searchedRoomMarkers.map(room => (
-          <Marker key={room.topic} position={[room.lat, room.lng]} icon={room.icon}>
-            <Popup className={`room-popup ${room.gender === 'Female' ? 'female' : 'male'}`}>
-              <div className="map-room-popup">
-                <div className="map-room-popup-header">
-                  <div className="map-room-popup-username">{room.username}</div>
-                  <span className={`map-room-popup-status ${getRoomAvailability(room)}`}>{getRoomAvailability(room)}</span>
+        {!isSearchingRooms && searchedRoomMarkers.map(room => {
+          const markerKey = room.topic || `${room.lat}-${room.lng}-${room.username || ''}`;
+          return (
+          <Marker
+            key={markerKey}
+            position={[room.displayLat, room.displayLng]}
+            icon={room.icon}
+            ref={marker => {
+              if (!room.overlapRooms) {
+                return;
+              }
+              if (marker) {
+                overlapMarkerRefs.current.set(markerKey, marker);
+              } else {
+                overlapMarkerRefs.current.delete(markerKey);
+              }
+            }}
+            eventHandlers={room.overlapRooms ? {
+              mouseover: event => {
+                if (!pinnedOverlapKey || pinnedOverlapKey === markerKey) {
+                  event.target.openPopup();
+                }
+              },
+              mouseout: event => {
+                if (pinnedOverlapKey !== markerKey) {
+                  event.target.closePopup();
+                }
+              },
+              click: event => {
+                setPinnedOverlapKey(markerKey);
+                event.target.openPopup();
+              },
+              popupclose: () => {
+                setPinnedOverlapKey(currentPinnedKey => (currentPinnedKey === markerKey ? '' : currentPinnedKey));
+              },
+            } : undefined}
+          >
+            {room.overlapRooms ? (
+              <Popup className="overlap-list-popup" closeButton={false}>
+                <div className="overlap-room-popup">
+                  <div className="overlap-room-popup-header">
+                    <button
+                      type="button"
+                      className="overlap-room-close-button"
+                      aria-label="Close duplicate list"
+                      onClick={event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        closePinnedOverlapPopup();
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {room.overlapRooms.map(overlapRoom => (
+                    <div className="overlap-room-item" key={overlapRoom.topic || `${overlapRoom.lat}-${overlapRoom.lng}-${overlapRoom.username || ''}`}>
+                      <div className={`overlap-room-gender ${overlapRoom.gender === 'Female' ? 'female' : 'male'}`}>
+                        {overlapRoom.messageType === 'Help' ? '!' : '💬'}
+                      </div>
+                      <div className="overlap-room-main">
+                        <div className="overlap-room-header">
+                          <div className="overlap-room-username">{overlapRoom.username}</div>
+                          <span className={`map-room-popup-status ${getRoomAvailability(overlapRoom)}`}>
+                            {getRoomAvailability(overlapRoom)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="map-room-popup-join-button overlap-room-action"
+                          onClick={() => handleRoomActionFromMap(overlapRoom)}
+                          disabled={!isHostRoom(overlapRoom) && (Boolean(joiningTopic) || isBusyRoom(overlapRoom))}
+                        >
+                          {isHostRoom(overlapRoom) ? 'Connect' : isBusyRoom(overlapRoom) ? 'Busy' : joiningTopic === overlapRoom.topic ? 'Joining...' : 'Join'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {room.message ? <div className="map-room-popup-message">{room.message}</div> : null}
-                <button
-                  type="button"
-                  className="map-room-popup-join-button"
-                  onClick={() => handleRoomActionFromMap(room)}
-                  disabled={!isHostRoom(room) && (Boolean(joiningTopic) || isBusyRoom(room))}
-                >
-                  {isHostRoom(room) ? 'Connect' : isBusyRoom(room) ? 'Busy' : joiningTopic === room.topic ? 'Joining...' : 'Join'}
-                </button>
-              </div>
-            </Popup>
+              </Popup>
+            ) : (
+              <Popup className={`room-popup ${room.gender === 'Female' ? 'female' : 'male'}`}>
+                <div className="map-room-popup">
+                  <div className="map-room-popup-header">
+                    <div className="map-room-popup-username">{room.username}</div>
+                    <span className={`map-room-popup-status ${getRoomAvailability(room)}`}>{getRoomAvailability(room)}</span>
+                  </div>
+                  {room.message ? <div className="map-room-popup-message">{room.message}</div> : null}
+                  <button
+                    type="button"
+                    className="map-room-popup-join-button"
+                    onClick={() => handleRoomActionFromMap(room)}
+                    disabled={!isHostRoom(room) && (Boolean(joiningTopic) || isBusyRoom(room))}
+                  >
+                    {isHostRoom(room) ? 'Connect' : isBusyRoom(room) ? 'Busy' : joiningTopic === room.topic ? 'Joining...' : 'Join'}
+                  </button>
+                </div>
+              </Popup>
+            )}
           </Marker>
-        ))}
+          );
+        })}
       </MapContainer>
       {isSearchingRooms && (
         <div className="scan-modal-backdrop">

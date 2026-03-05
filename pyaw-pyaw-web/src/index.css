@@ -515,6 +515,118 @@ code {
   transform: translateY(-1px);
 }
 
+.overlap-list-popup .leaflet-popup-content-wrapper {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: linear-gradient(150deg, rgba(20, 24, 34, 0.54), rgba(20, 24, 34, 0.36));
+  box-shadow: 0 14px 30px rgba(4, 10, 24, 0.38);
+  backdrop-filter: blur(12px);
+  overflow: visible;
+}
+
+.overlap-list-popup .leaflet-popup-content {
+  margin: 12px 12px 10px;
+}
+
+.overlap-room-popup {
+  min-width: 220px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overlap-room-popup-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  height: 22px;
+  padding-right: 2px;
+}
+
+.overlap-room-close-button {
+  position: static;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  background: rgba(10, 14, 24, 0.9);
+  color: #ffffff;
+  font-size: 0.95rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.overlap-room-close-button:hover {
+  transform: scale(1.06);
+  background: rgba(15, 26, 48, 0.92);
+}
+
+.overlap-room-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.overlap-room-gender {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.overlap-room-gender.female {
+  background: linear-gradient(145deg, #ff7fc6, #d54090);
+}
+
+.overlap-room-gender.male {
+  background: linear-gradient(145deg, #67c3ff, #2b87d2);
+}
+
+.overlap-room-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.overlap-room-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overlap-room-username {
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overlap-room-action {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  border-radius: 9px;
+}
+
 /* Override Leaflet Popup Styles */
 .leaflet-popup-content-wrapper {
   padding: 0;
@@ -630,46 +742,123 @@ code {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  animation: markerFloat 2s ease-in-out infinite;
+  animation: none;
+}
+
+.marker-stack-count {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: linear-gradient(145deg, #1e232d, #0f131c);
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.36);
+  z-index: 4;
 }
 
 .marker-hand-halo {
   position: absolute;
   left: 50%;
-  top: 12px;
-  width: 36px;
-  height: 36px;
+  top: 6px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   transform: translateX(-50%);
-  z-index: 1;
+  z-index: 2;
+  overflow: hidden;
+  --ring-c1: #21c16b;
+  --ring-c2: #139a4f;
+  --ring-c3: #7de3ac;
+  --badge-c1: #1d2f5a;
+  --badge-c2: #121e3d;
+  --badge-c3: #0a1227;
+  box-shadow: 0 0 0 1.4px rgba(255, 255, 255, 0.92), 0 0 0 2.6px rgba(7, 11, 18, 0.52), 0 0 16px rgba(33, 193, 107, 0.54);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.marker-hand-halo::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -30deg,
+    var(--ring-c1) 0%,
+    var(--ring-c2) 30%,
+    var(--ring-c3) 52%,
+    var(--ring-c2) 76%,
+    var(--ring-c1) 100%
+  );
+  will-change: transform;
+  transform: translateZ(0) rotate(0deg);
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  animation: markerRingSpin 3.2s linear infinite;
+  filter: saturate(1.08) brightness(1.03);
+}
+
+.marker-hand-halo::after {
+  content: '';
+  position: absolute;
+  inset: 3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, var(--badge-c1) 0%, var(--badge-c2) 66%, var(--badge-c3) 100%);
 }
 
 .user-hand-marker.male .marker-hand-halo {
-  background: radial-gradient(circle, rgba(126, 211, 255, 0.5), rgba(56, 168, 255, 0.08) 70%);
+  --badge-c1: #54b8ff;
+  --badge-c2: #2a7fe2;
+  --badge-c3: #1951a4;
 }
 
 .user-hand-marker.female .marker-hand-halo {
-  background: radial-gradient(circle, rgba(255, 162, 215, 0.5), rgba(255, 86, 170, 0.08) 70%);
+  --badge-c1: #ff89d4;
+  --badge-c2: #ff56aa;
+  --badge-c3: #c4297a;
+}
+
+.user-hand-marker.status-idle .marker-hand-halo {
+  --ring-c1: #21c16b;
+  --ring-c2: #139a4f;
+  --ring-c3: #7de3ac;
+  box-shadow: 0 0 0 1.4px rgba(255, 255, 255, 0.94), 0 0 0 2.7px rgba(10, 22, 16, 0.58), 0 0 16px rgba(33, 193, 107, 0.62);
+}
+
+.user-hand-marker.status-busy .marker-hand-halo {
+  --ring-c1: #ff2d6a;
+  --ring-c2: #ff5c3a;
+  --ring-c3: #ffbe40;
+  box-shadow: 0 0 0 1.4px rgba(255, 255, 255, 0.94), 0 0 0 2.7px rgba(24, 12, 17, 0.6), 0 0 16px rgba(255, 45, 106, 0.62);
 }
 
 .marker-hand-svg {
   position: relative;
-  z-index: 2;
-  width: 48px;
-  height: 48px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
   transform-origin: bottom center;
   animation: none;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
   overflow: visible;
 }
 
 .marker-border-base {
-  opacity: 0.9;
-}
-
-.marker-border-ray {
-  animation: markerBorderRay 1.6s linear infinite;
-  filter: drop-shadow(0 0 3px currentColor);
+  opacity: 1;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
 }
 
 .marker-hand-svg.help-svg {
@@ -677,61 +866,16 @@ code {
 }
 
 .marker-hand-svg.chat-svg {
-  width: 46px;
-  height: 46px;
+  width: 21px;
+  height: 21px;
 }
 
-.user-hand-marker.male .marker-hand-svg {
-  filter: drop-shadow(0 0 8px rgba(56, 168, 255, 0.8));
-}
-
-.user-hand-marker.female .marker-hand-svg {
-  filter: drop-shadow(0 0 8px rgba(255, 86, 170, 0.8));
-}
-
-.marker-pulse {
-  position: absolute;
-  left: 50%;
-  bottom: 4px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  transform: translateX(-50%);
-  animation: markerPulse 1.8s ease-out infinite;
-}
-
-.user-hand-marker.male .marker-pulse {
-  background-color: rgba(56, 168, 255, 0.6);
-  box-shadow: 0 0 12px rgba(56, 168, 255, 0.4);
-}
-
-.user-hand-marker.female .marker-pulse {
-  background-color: rgba(255, 86, 170, 0.6);
-  box-shadow: 0 0 12px rgba(255, 86, 170, 0.4);
-}
-
-@keyframes markerPulse {
-  0% {
-    transform: translateX(-50%) scale(0.5);
-    opacity: 0.95;
+@keyframes markerRingSpin {
+  from {
+    transform: rotate(0deg);
   }
-  100% {
-    transform: translateX(-50%) scale(3.5);
-    opacity: 0;
-  }
-}
-
-@keyframes markerBorderRay {
-  0% {
-    stroke-dashoffset: 0;
-    opacity: 0.25;
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    stroke-dashoffset: -100;
-    opacity: 0.2;
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -1021,17 +1165,17 @@ code {
 .chat-message-item.own .chat-message-bubble::before {
   content: '';
   position: absolute;
-  bottom: 9px;
-  width: 11px;
-  height: 11px;
+  bottom: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: inherit;
-  border-bottom: inherit;
+  border: inherit;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
 }
 
 .chat-message-item.peer .chat-message-bubble::before {
-  left: -5px;
-  transform: rotate(45deg);
-  border-left: inherit;
+  left: -9px;
 }
 
 .chat-message-item.own .chat-message-bubble {
@@ -1039,16 +1183,33 @@ code {
   background: linear-gradient(140deg, rgba(255, 96, 187, 0.42), rgba(156, 98, 255, 0.24));
 }
 
+.chat-message-item.peer .chat-message-bubble {
+  animation: chatBubblePop 0.32s ease-out;
+  transform-origin: left bottom;
+}
+
 .chat-message-item.own .chat-message-bubble::before {
-  right: -5px;
-  transform: rotate(-45deg);
-  border-right: inherit;
+  right: -9px;
 }
 
 .chat-message-item.system .chat-message-bubble {
   text-align: center;
   border-color: rgba(255, 164, 181, 0.56);
   background: linear-gradient(140deg, rgba(130, 58, 79, 0.46), rgba(96, 48, 114, 0.34));
+}
+
+@keyframes chatBubblePop {
+  0% {
+    transform: scale(0.94) translateY(4px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.02) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
 }
 
 .chat-message-float {
