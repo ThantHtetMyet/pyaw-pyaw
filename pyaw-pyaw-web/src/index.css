@@ -966,10 +966,89 @@ code {
 
 .chat-empty {
   color: rgba(255, 255, 255, 0.72);
+  text-align: center;
+  padding: 10px 0;
 }
 
-.chat-sender {
+.chat-message-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 82%;
+  align-self: flex-start;
+}
+
+.chat-message-item.own {
+  align-self: flex-end;
+}
+
+.chat-message-item.system {
+  align-self: center;
+  max-width: 92%;
+}
+
+.chat-message-meta {
+  font-size: 0.74rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(219, 232, 255, 0.9);
+  padding: 0 2px;
+}
+
+.chat-message-item.own .chat-message-meta {
+  text-align: right;
+  color: rgba(232, 240, 255, 0.95);
+}
+
+.chat-message-item.system .chat-message-meta {
+  text-align: center;
+  color: rgba(255, 214, 222, 0.95);
+}
+
+.chat-message-bubble {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid rgba(132, 164, 255, 0.45);
+  background: linear-gradient(140deg, rgba(78, 102, 220, 0.42), rgba(58, 130, 235, 0.24));
+  padding: 10px 12px;
+  color: #f7f9ff;
+  line-height: 1.45;
+  word-break: break-word;
+  box-shadow: 0 8px 16px rgba(5, 9, 20, 0.24);
+}
+
+.chat-message-item.peer .chat-message-bubble::before,
+.chat-message-item.own .chat-message-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: 9px;
+  width: 11px;
+  height: 11px;
+  background: inherit;
+  border-bottom: inherit;
+}
+
+.chat-message-item.peer .chat-message-bubble::before {
+  left: -5px;
+  transform: rotate(45deg);
+  border-left: inherit;
+}
+
+.chat-message-item.own .chat-message-bubble {
+  border-color: rgba(255, 176, 232, 0.56);
+  background: linear-gradient(140deg, rgba(255, 96, 187, 0.42), rgba(156, 98, 255, 0.24));
+}
+
+.chat-message-item.own .chat-message-bubble::before {
+  right: -5px;
+  transform: rotate(-45deg);
+  border-right: inherit;
+}
+
+.chat-message-item.system .chat-message-bubble {
+  text-align: center;
+  border-color: rgba(255, 164, 181, 0.56);
+  background: linear-gradient(140deg, rgba(130, 58, 79, 0.46), rgba(96, 48, 114, 0.34));
 }
 
 .chat-message-float {
@@ -1049,6 +1128,10 @@ code {
   .chat-messages {
     min-height: 180px;
     max-height: min(48dvh, 360px);
+  }
+
+  .chat-message-item {
+    max-width: 90%;
   }
 
   .chat-input-row {

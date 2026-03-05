@@ -190,11 +190,22 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
 
-  const addMessage = (sender, text) => {
+  const addMessage = (sender, text, options = {}) => {
     if (!text) {
       return;
     }
-    setMessages(prev => [...prev, { id: Date.now(), sender, text }]);
+    const messageType = options.type || 'chat';
+    const isOwn = Boolean(options.isOwn);
+    setMessages(prev => [
+      ...prev,
+      {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        sender,
+        text,
+        type: messageType,
+        isOwn,
+      },
+    ]);
   };
 
   const scrollToBottom = () => {
@@ -379,14 +390,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             if (payload?.type === 'kill') {
               setIsRoomKilled(true);
               setShowChatInterface(true);
-              addMessage('System', payload?.text || 'Host ended this chat.');
+              addMessage('System', payload?.text || 'Host ended this chat.', { type: 'system' });
               return;
             }
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
             setShowChatInterface(true);
             const senderName = payload?.senderName || (payload?.senderRole === 'host' ? 'Host' : 'Guest');
-            addMessage(senderName, text);
+            addMessage(senderName, text, { isOwn: false });
           }
         });
 
@@ -500,7 +511,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     });
 
     mqttClientRef.current.publish(`${topic}/chat`, payload);
-    addMessage(username || (role === 'host' ? 'Host' : 'Guest'), messageText);
+    addMessage(username || (role === 'host' ? 'Host' : 'Guest'), messageText, { isOwn: true });
     setInputValue('');
   };
 
@@ -648,8 +659,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             <div className="chat-messages">
               {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
               {messages.map(message => (
-                <div key={message.id} className="chat-message-item">
-                  <span className="chat-sender">{message.sender}:</span> {message.text}
+                <div
+                  key={message.id}
+                  className={`chat-message-item ${message.type === 'system' ? 'system' : message.isOwn ? 'own' : 'peer'}`}
+                >
+                  <div className="chat-message-meta">{message.sender}</div>
+                  <div className="chat-message-bubble">{message.text}</div>
                 </div>
               ))}
               <div ref={messagesEndRef} />
