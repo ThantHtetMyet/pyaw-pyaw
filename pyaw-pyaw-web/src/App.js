@@ -51,6 +51,10 @@ function parseExpiresAt(value) {
   return Number.isFinite(parsed) ? parsed : Date.now() + DEFAULT_SESSION_MS;
 }
 
+function isFutureTimestamp(value) {
+  return Number.isFinite(value) && value > Date.now();
+}
+
 function getOrCreateClientId() {
   const existing = window.localStorage.getItem(CLIENT_ID_KEY);
   if (existing) {
@@ -729,7 +733,7 @@ function App() {
             availability: room.lastGuestId ? 'busy' : 'idle',
           };
         })
-        .filter(room => !hiddenTopics.has(room.topic)),
+        .filter(room => isFutureTimestamp(room.sessionExpiresAt) && !hiddenTopics.has(room.topic)),
     [hiddenTopics]
   );
 
@@ -920,6 +924,54 @@ function App() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [refreshRoomsSilently]);
+
+  useEffect(() => {
+    const pollTimer = window.setInterval(() => {
+      refreshRoomsSilently().catch(() => {});
+    }, 15000);
+    return () => {
+      window.clearInterval(pollTimer);
+    };
+  }, [refreshRoomsSilently]);
+
+  useEffect(() => {
+    const pruneTimer = window.setInterval(() => {
+      const now = Date.now();
+      setSearchedRooms(prev =>
+        prev.filter(room => Number.isFinite(room?.sessionExpiresAt) && room.sessionExpiresAt > now)
+      );
+    }, 1000);
+    return () => {
+      window.clearInterval(pruneTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!createdRoom) {
+      return;
+    }
+    if (isFutureTimestamp(createdRoom.sessionExpiresAt)) {
+      return;
+    }
+    setCreatedRoom(null);
+    if (hostRoomTopic === createdRoom.topic) {
+      setHostRoomTopic('');
+    }
+  }, [createdRoom, hostRoomTopic]);
+
+  useEffect(() => {
+    if (!activeChatRoom) {
+      return;
+    }
+    if (isFutureTimestamp(activeChatRoom.sessionExpiresAt)) {
+      return;
+    }
+    setActiveChatRoom(null);
+    window.localStorage.removeItem('pyaw-pyaw-active-room');
+    if (activeChatRoom.role === 'host') {
+      setHostRoomTopic('');
+    }
+  }, [activeChatRoom]);
 
   useEffect(() => {
     let isDisposed = false;

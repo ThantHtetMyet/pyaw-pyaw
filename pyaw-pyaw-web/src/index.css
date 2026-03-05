@@ -458,7 +458,7 @@ code {
   font-weight: 700;
   font-size: 1rem;
   color: #ffffff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  text-shadow: 0 2px 6px rgba(12, 22, 44, 0.42);
 }
 
 .map-room-popup-status {
@@ -472,31 +472,34 @@ code {
 }
 
 .map-room-popup-status.idle {
-  color: #dafeea;
-  border-color: rgba(88, 230, 140, 0.65);
-  background: rgba(33, 156, 83, 0.35);
+  color: #ffffff;
+  border-color: #29b86f;
+  background: #29b86f;
 }
 
 .map-room-popup-status.busy {
-  color: #ffe4e9;
-  border-color: rgba(255, 120, 130, 0.75);
-  background: rgba(184, 52, 72, 0.38);
+  color: #ffffff;
+  border-color: #de4d5f;
+  background: #de4d5f;
 }
 
 .map-room-popup-message {
   color: rgba(255, 255, 255, 0.95);
   font-size: 0.9rem;
   line-height: 1.4;
-  background: rgba(0, 0, 0, 0.1);
+  background: linear-gradient(140deg, rgba(16, 67, 114, 0.34), rgba(8, 47, 88, 0.25));
   padding: 6px 10px;
   border-radius: 8px;
-  border-left: 3px solid rgba(255, 255, 255, 0.5);
+  border-left: 3px solid rgba(255, 255, 255, 0.62);
+  border-top: 1px solid rgba(255, 255, 255, 0.26);
+  backdrop-filter: blur(3px);
+  text-shadow: 0 1px 2px rgba(8, 20, 40, 0.38);
 }
 
 .map-room-popup-join-button {
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(22, 94, 153, 0.36), rgba(10, 62, 120, 0.3));
   color: #ffffff;
   font: inherit;
   font-weight: 700;
@@ -504,10 +507,11 @@ code {
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: center;
+  text-shadow: 0 1px 2px rgba(8, 20, 40, 0.35);
 }
 
 .map-room-popup-join-button:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: linear-gradient(135deg, rgba(30, 115, 182, 0.42), rgba(14, 75, 138, 0.36));
   transform: translateY(-1px);
 }
 
@@ -516,15 +520,24 @@ code {
   padding: 0;
   overflow: hidden;
   border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 14px 30px rgba(6, 10, 20, 0.35);
 }
 
 .room-popup.female .leaflet-popup-content-wrapper {
-  background: linear-gradient(135deg, #ff7dbd, #ff56aa);
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 85% 88%, rgba(255, 116, 191, 0.24), rgba(255, 86, 170, 0) 54%),
+    linear-gradient(145deg, #e76aae 0%, #d24b95 45%, #b63679 100%);
+  box-shadow: 0 12px 26px rgba(214, 62, 145, 0.28), 0 6px 16px rgba(10, 15, 30, 0.24);
 }
 
 .room-popup.male .leaflet-popup-content-wrapper {
-  background: linear-gradient(135deg, #7ad6ff, #38a8ff);
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 85% 88%, rgba(80, 198, 255, 0.24), rgba(56, 168, 255, 0) 54%),
+    linear-gradient(145deg, #5fbce6 0%, #3f9ed4 45%, #2b7fbe 100%);
+  box-shadow: 0 12px 26px rgba(46, 146, 222, 0.3), 0 6px 16px rgba(10, 15, 30, 0.24);
 }
 
 .leaflet-popup-content {
