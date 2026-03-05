@@ -742,13 +742,15 @@ code {
 }
 
 .room-tab-page {
-  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   background: radial-gradient(circle at 15% 0%, #2f2f6d 0%, #131629 38%, #090b15 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px;
+  padding: 18px 18px calc(18px + var(--keyboard-inset, 0px));
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .room-overlay {
@@ -759,6 +761,7 @@ code {
 
 .room-panel {
   width: min(680px, 100%);
+  max-height: 100%;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.08));
@@ -769,6 +772,7 @@ code {
   flex-direction: column;
   gap: 12px;
   color: #ffffff;
+  overflow: hidden;
 }
 
 .room-title {
@@ -903,6 +907,8 @@ code {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  flex: 1;
 }
 
 .room-connected-banner {
@@ -925,13 +931,14 @@ code {
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.24);
   background: rgba(8, 10, 15, 0.4);
-  min-height: 240px;
-  max-height: 380px;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
 }
 
 .chat-empty {
@@ -1000,13 +1007,20 @@ code {
 }
 
 @media (max-width: 768px) {
+  .room-tab-page {
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 10px 10px calc(10px + var(--keyboard-inset, 0px));
+  }
+
   .room-panel {
+    height: 100%;
+    max-height: 100%;
     padding: 14px;
   }
 
   .chat-messages {
-    min-height: 200px;
-    max-height: 320px;
+    min-height: 140px;
   }
 
   .chat-input-row {

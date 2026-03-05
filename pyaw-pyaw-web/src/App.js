@@ -47,6 +47,15 @@ async function requestJson(path, options = {}) {
 }
 
 function parseExpiresAt(value) {
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      return numericValue < 1_000_000_000_000 ? numericValue * 1000 : numericValue;
+    }
+  }
   const parsed = Date.parse(value || '');
   return Number.isFinite(parsed) ? parsed : Date.now() + DEFAULT_SESSION_MS;
 }
@@ -203,6 +212,31 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
     return () => window.clearInterval(timer);
   }, [sessionExpiresAt]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) {
+      document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      return () => {
+        document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      };
+    }
+
+    const updateKeyboardInset = () => {
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
+    };
+
+    updateKeyboardInset();
+    viewport.addEventListener('resize', updateKeyboardInset);
+    viewport.addEventListener('scroll', updateKeyboardInset);
+
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardInset);
+      viewport.removeEventListener('scroll', updateKeyboardInset);
+      document.documentElement.style.setProperty('--keyboard-inset', '0px');
+    };
+  }, []);
 
   const isWaiting = !isPeerJoined && !isExpired;
 
