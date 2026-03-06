@@ -166,6 +166,14 @@ function MapComponent({
   onOpenRoom,
 }) {
   const defaultPosition = [51.505, -0.09];
+  const [mapTheme, setMapTheme] = useState('light');
+  const isDarkTheme = mapTheme === 'dark';
+  const tileUrl = isDarkTheme
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const tileAttribution = isDarkTheme
+    ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   const markerIcon = useMemo(() => {
     if (!createdRoom) {
       return null;
@@ -268,7 +276,7 @@ function MapComponent({
   const locateIcon = useMemo(
     () =>
       L.divIcon({
-        html: '<div class="current-location-marker"><div class="current-location-wave"></div><div class="current-location-pin"><svg class="current-location-pin-icon" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="currentLocationPinGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff5aa5"></stop><stop offset="55%" stop-color="#ff2f76"></stop><stop offset="100%" stop-color="#e10f5f"></stop></linearGradient></defs><path d="M32 3c-10.5 0-19 8.4-19 18.7 0 14.5 16.7 33.6 18.5 35.7.3.4.8.6 1.3.6s1-.2 1.3-.6C34.3 55.3 51 36.2 51 21.7 51 11.4 42.5 3 32 3z" fill="url(#currentLocationPinGradient)"></path><circle cx="32" cy="22" r="9" fill="none" stroke="#ffffff" stroke-width="4.2"></circle></svg></div></div>',
+        html: '<div class="current-location-marker"><div class="current-location-pulse"></div><div class="current-location-wave"></div><div class="current-location-pin"><svg class="current-location-pin-icon" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="currentLocationPinGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff5aa5"></stop><stop offset="55%" stop-color="#ff2f76"></stop><stop offset="100%" stop-color="#e10f5f"></stop></linearGradient></defs><path d="M32 3c-10.5 0-19 8.4-19 18.7 0 14.5 16.7 33.6 18.5 35.7.3.4.8.6 1.3.6s1-.2 1.3-.6C34.3 55.3 51 36.2 51 21.7 51 11.4 42.5 3 32 3z" fill="url(#currentLocationPinGradient)"></path><circle cx="32" cy="22" r="9" fill="none" stroke="#ffffff" stroke-width="4.2"></circle></svg></div></div>',
         className: 'current-location-wrapper',
         iconSize: [46, 46],
         iconAnchor: [23, 40],
@@ -316,8 +324,8 @@ function MapComponent({
     <div className="map-stage">
       <MapContainer center={defaultPosition} zoom={13} style={{ height: '100vh', width: '100%' }}>
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={tileAttribution}
+          url={tileUrl}
         />
         <MapResizeSync />
         <MapRecenter createdRoom={createdRoom} locatedPosition={locatedPosition} />
@@ -447,6 +455,29 @@ function MapComponent({
           );
         })}
       </MapContainer>
+      <div
+        className={`map-theme-toggle ${isDarkTheme ? 'dark' : 'light'}`}
+        role="group"
+        aria-label="Map theme"
+        onClick={() => setMapTheme(isDarkTheme ? 'light' : 'dark')}
+      >
+        <button
+          type="button"
+          className="map-theme-toggle-option"
+          aria-pressed={!isDarkTheme}
+          data-theme="light"
+        >
+          White
+        </button>
+        <button
+          type="button"
+          className="map-theme-toggle-option"
+          aria-pressed={isDarkTheme}
+          data-theme="dark"
+        >
+          Black
+        </button>
+      </div>
       {isSearchingRooms && (
         <div className="scan-modal-backdrop">
           <div className="scan-modal-panel">
