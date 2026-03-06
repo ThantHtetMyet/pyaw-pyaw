@@ -254,13 +254,48 @@ code {
   border: 0;
 }
 
-.current-location-dot {
-  width: 16px;
-  height: 16px;
+.current-location-marker {
+  position: relative;
+  width: 46px;
+  height: 46px;
+}
+
+.current-location-wave {
+  position: absolute;
+  left: 50%;
+  top: 68%;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  border: 2px solid #ffffff;
-  background: #38a8ff;
-  box-shadow: 0 0 0 8px rgba(56, 168, 255, 0.2);
+  transform: translate(-50%, -50%);
+  background: rgba(255, 56, 176, 0.35);
+  box-shadow: 0 0 28px rgba(255, 56, 176, 0.45);
+  animation: currentLocationWave 2.4s ease-out infinite;
+}
+
+.current-location-pin {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  filter: drop-shadow(0 10px 18px rgba(16, 10, 26, 0.35));
+}
+
+.current-location-pin-icon {
+  width: 40px;
+  height: 40px;
+}
+
+@keyframes currentLocationWave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.2);
+    opacity: 0;
+  }
 }
 
 .map-stage {

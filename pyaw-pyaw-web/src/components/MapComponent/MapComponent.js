@@ -268,10 +268,10 @@ function MapComponent({
   const locateIcon = useMemo(
     () =>
       L.divIcon({
-        html: '<div class="current-location-dot"></div>',
+        html: '<div class="current-location-marker"><div class="current-location-wave"></div><div class="current-location-pin"><svg class="current-location-pin-icon" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="currentLocationPinGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff5aa5"></stop><stop offset="55%" stop-color="#ff2f76"></stop><stop offset="100%" stop-color="#e10f5f"></stop></linearGradient></defs><path d="M32 3c-10.5 0-19 8.4-19 18.7 0 14.5 16.7 33.6 18.5 35.7.3.4.8.6 1.3.6s1-.2 1.3-.6C34.3 55.3 51 36.2 51 21.7 51 11.4 42.5 3 32 3z" fill="url(#currentLocationPinGradient)"></path><circle cx="32" cy="22" r="9" fill="none" stroke="#ffffff" stroke-width="4.2"></circle></svg></div></div>',
         className: 'current-location-wrapper',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
+        iconSize: [46, 46],
+        iconAnchor: [23, 40],
       }),
     []
   );
