@@ -147,8 +147,8 @@
 }
 
 .locate-item {
-  --move-x: 108px;
-  --move-y: -6px;
+  --move-x: 120px;
+  --move-y: 0px;
 }
 
 .menu-button-container.open .create-item {
