@@ -237,7 +237,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [messages, setMessages] = useState([]);
   const [showChatInterface, setShowChatInterface] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
   const [isRoomKilled, setIsRoomKilled] = useState(false);
@@ -252,7 +251,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
   const joinNoticeTimerRef = useRef(null);
-  const composerInputRef = useRef(null);
+  const baseInputRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -414,17 +413,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     }
   }, [isWaiting, isExpired, showChatInterface]);
 
-  useEffect(() => {
-    if (!showChatInterface || isChatLocked) {
-      setIsComposerOpen(false);
-    }
-  }, [isChatLocked, showChatInterface]);
-
-  useEffect(() => {
-    if (isComposerOpen) {
-      composerInputRef.current?.focus();
-    }
-  }, [isComposerOpen]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -704,28 +692,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     setInputValue('');
   };
 
-  const handleOpenComposer = () => {
-    if (isChatLocked) {
-      return;
-    }
-    if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
-      setIsComposerOpen(true);
-    }
-  };
-
-  const handleCloseComposer = () => {
-    setIsComposerOpen(false);
-  };
-
-  const handleSendFromComposer = () => {
-    const messageText = inputValue.trim();
-    if (!messageText || !mqttClientRef.current?.connected || isChatLocked) {
-      return;
-    }
-    handleSendMessage();
-    setIsComposerOpen(false);
-  };
-
   const notifyMapAndClose = payload => {
     try {
       if (window.opener && !window.opener.closed) {
@@ -838,50 +804,54 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   return (
     <div className="room-tab-page">
       {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
-      <div className="room-panel">
-        <div className="room-top-row">
-          <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
-          <button
-            type="button"
-            className={`room-action-button room-exit-top ${isHostRole ? 'danger' : ''}`}
-            onClick={handleExitChat}
-            aria-label={isHostRole ? 'Kill room' : 'Exit chat'}
-          >
-            <svg viewBox="0 0 24 24" className="room-action-icon" aria-hidden="true">
-              <path d="M15 3h-6a2 2 0 0 0-2 2v3h2V5h6v14h-6v-3H7v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
-              <path d="M13.3 8.3l1.4 1.4-1.3 1.3H5v2h8.4l1.3 1.3-1.4 1.4L9.6 12z" />
-            </svg>
-            {isHostRole ? 'Kill room' : 'Exit'}
-          </button>
-        </div>
-        <div className="room-user-row">
-          {showReceiverCard && (
-            <div className="room-user-card left">
+      <div className="room-header">
+        <div className="room-header-panel">
+          <div className="room-top-row">
+            <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
+            <button
+              type="button"
+              className={`room-action-button room-exit-top ${isHostRole ? 'danger' : ''}`}
+              onClick={handleExitChat}
+              aria-label={isHostRole ? 'Kill room' : 'Exit chat'}
+            >
+              <svg viewBox="0 0 24 24" className="room-action-icon" aria-hidden="true">
+                <path d="M15 3h-6a2 2 0 0 0-2 2v3h2V5h6v14h-6v-3H7v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
+                <path d="M13.3 8.3l1.4 1.4-1.3 1.3H5v2h8.4l1.3 1.3-1.4 1.4L9.6 12z" />
+              </svg>
+              {isHostRole ? 'Kill room' : 'Exit'}
+            </button>
+          </div>
+          <div className="room-user-row">
+            {showReceiverCard && (
+              <div className="room-user-card left">
+                <div className="room-user-flag-stack">
+                  {receiverFlagSource ? (
+                    <img className="room-user-flag-img" src={receiverFlagSource} alt="Receiver flag" />
+                  ) : (
+                    <span className="room-user-flag">🏳️</span>
+                  )}
+                  <span className="room-user-country">{receiverCountryName}</span>
+                </div>
+                <span className="room-user-divider" aria-hidden="true" />
+                <span className="room-user-name">{receiverName}</span>
+              </div>
+            )}
+            <div className="room-user-card right">
               <div className="room-user-flag-stack">
-                {receiverFlagSource ? (
-                  <img className="room-user-flag-img" src={receiverFlagSource} alt="Receiver flag" />
+                {senderFlagSource ? (
+                  <img className="room-user-flag-img" src={senderFlagSource} alt="Sender flag" />
                 ) : (
                   <span className="room-user-flag">🏳️</span>
                 )}
-                <span className="room-user-country">{receiverCountryName}</span>
+                <span className="room-user-country">{senderCountryName}</span>
               </div>
               <span className="room-user-divider" aria-hidden="true" />
-              <span className="room-user-name">{receiverName}</span>
+              <span className="room-user-name">{senderName}</span>
             </div>
-          )}
-          <div className="room-user-card right">
-            <div className="room-user-flag-stack">
-              {senderFlagSource ? (
-                <img className="room-user-flag-img" src={senderFlagSource} alt="Sender flag" />
-              ) : (
-                <span className="room-user-flag">🏳️</span>
-              )}
-              <span className="room-user-country">{senderCountryName}</span>
-            </div>
-            <span className="room-user-divider" aria-hidden="true" />
-            <span className="room-user-name">{senderName}</span>
           </div>
         </div>
+      </div>
+      <div className="room-panel">
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
         {isWaiting && (
@@ -925,62 +895,19 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               ))}
               <div ref={messagesEndRef} />
             </div>
-            <div className={`chat-input-row ${isComposerOpen ? 'hidden' : ''}`}>
+            <div className="chat-input-row">
               <input
+                ref={baseInputRef}
                 className="chat-input"
                 value={inputValue}
                 onChange={event => setInputValue(event.target.value)}
                 onKeyDown={event => event.key === 'Enter' && handleSendMessage()}
-                onFocus={handleOpenComposer}
                 placeholder="Type a message..."
                 disabled={isChatLocked}
               />
               <button type="button" className="chat-send-button" onClick={handleSendMessage} disabled={isChatLocked}>
                 Send
               </button>
-            </div>
-          </div>
-        )}
-        {isComposerOpen && (
-          <div className="mobile-composer-backdrop" onClick={handleCloseComposer}>
-            <div className="mobile-composer" onClick={event => event.stopPropagation()}>
-              <div className="mobile-composer-row">
-                <button
-                  type="button"
-                  className="mobile-composer-close"
-                  onClick={handleCloseComposer}
-                  aria-label="Close composer"
-                >
-                  ×
-                </button>
-                <input
-                  ref={composerInputRef}
-                  className="mobile-composer-input"
-                  value={inputValue}
-                  onChange={event => setInputValue(event.target.value)}
-                  onKeyDown={event => event.key === 'Enter' && handleSendFromComposer()}
-                  placeholder="Type a message..."
-                  disabled={isChatLocked}
-                />
-              </div>
-              <div className="mobile-composer-actions">
-                <button
-                  type="button"
-                  className="modal-action-button cancel-button"
-                  onClick={handleCloseComposer}
-                  disabled={isChatLocked}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="modal-action-button create-button"
-                  onClick={handleSendFromComposer}
-                  disabled={isChatLocked || !inputValue.trim()}
-                >
-                  Send
-                </button>
-              </div>
             </div>
           </div>
         )}
