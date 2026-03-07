@@ -171,12 +171,11 @@ function writeHiddenTopics(topics) {
   window.localStorage.setItem(HIDDEN_TOPICS_KEY, JSON.stringify(Array.from(topics)));
 }
 
-function getCountryFlag(countryCode) {
+function getCountryFlagSource(countryCode) {
   if (!countryCode || countryCode.length !== 2) {
-    return '🏳️';
+    return '';
   }
-  const codePoints = [...countryCode.toUpperCase()].map(char => 127397 + char.charCodeAt(0));
-  return String.fromCodePoint(...codePoints);
+  return `https://flagcdn.com/24x18/${countryCode.toLowerCase()}.png`;
 }
 
 function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
@@ -191,6 +190,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000))
   );
   const [joinNotice, setJoinNotice] = useState('');
+  const [peerName, setPeerName] = useState('');
+  const [peerCountry, setPeerCountry] = useState('');
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
@@ -269,6 +270,87 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   }, []);
 
   const isWaiting = !isPeerJoined && !isExpired;
+  const [selfCountry, setSelfCountry] = useState('');
+  const updatePeerInfo = useCallback(
+    payload => {
+      const senderName = typeof payload?.senderName === 'string' ? payload.senderName.trim() : '';
+      const senderCountry = typeof payload?.senderCountry === 'string' ? payload.senderCountry.trim().toUpperCase() : '';
+      if (isHostRole && payload?.senderRole === 'guest') {
+        if (senderName) {
+          setPeerName(senderName);
+        }
+        if (senderCountry) {
+          setPeerCountry(senderCountry);
+        }
+      }
+      if (!isHostRole && payload?.senderRole === 'host') {
+        if (senderName) {
+          setPeerName(senderName);
+        }
+        if (senderCountry) {
+          setPeerCountry(senderCountry);
+        }
+      }
+    },
+    [isHostRole]
+  );
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      return undefined;
+    }
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      async position => {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=3&addressdetails=1`,
+            {
+              headers: {
+                'Accept-Language': 'en',
+              },
+            }
+          );
+          if (!response.ok) {
+            return;
+          }
+          const data = await response.json();
+          const countryCode = typeof data?.address?.country_code === 'string'
+            ? data.address.country_code.trim().toUpperCase()
+            : '';
+          if (!cancelled && countryCode) {
+            setSelfCountry(countryCode);
+          }
+        } catch {
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selfCountry || !mqttClientRef.current?.connected) {
+      return;
+    }
+    mqttClientRef.current.publish(
+      `${topic}/presence`,
+      JSON.stringify({
+        type: 'update',
+        clientId: clientIdRef.current,
+        senderId: clientIdRef.current,
+        senderRole: role,
+        senderName: username,
+        senderCountry: selfCountry,
+      })
+    );
+  }, [selfCountry, topic, role, username]);
 
   useEffect(() => {
     if (!isWaiting && !isExpired && !showChatInterface) {
@@ -346,6 +428,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
                 senderId: clientIdRef.current,
                 senderRole: role,
                 senderName: username,
+                senderCountry: selfCountry,
               })
             );
           });
@@ -381,6 +464,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               setIsPeerJoined(false);
               hasSeenPeerRef.current = false;
               setJoinNotice('');
+              setPeerName('');
+              setPeerCountry('');
               if (role === 'host') {
                 setShowChatInterface(false);
                 setMessages([]);
@@ -390,6 +475,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             }
             setIsPeerJoined(true);
             setShowChatInterface(true);
+            updatePeerInfo(payload);
             if (presenceType === 'join' && isHostRole) {
               const senderName = typeof payload?.senderName === 'string' && payload.senderName.trim()
                 ? payload.senderName.trim()
@@ -400,7 +486,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               }
               joinNoticeTimerRef.current = window.setTimeout(() => {
                 setJoinNotice('');
-              }, 3000);
+              }, 5000);
             }
             if (presenceType === 'join' && !hasSeenPeerRef.current && mqttClient.connected) {
               hasSeenPeerRef.current = true;
@@ -412,6 +498,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
                   senderId: clientIdRef.current,
                   senderRole: role,
                   senderName: username,
+                  senderCountry: selfCountry,
                 })
               );
             }
@@ -428,6 +515,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
             setShowChatInterface(true);
+            updatePeerInfo(payload);
             const senderName = payload?.senderName || (payload?.senderRole === 'host' ? 'Host' : 'Guest');
             addMessage(senderName, text, { isOwn: false });
           }
@@ -454,7 +542,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, sessionExpiresAt, username, isHostRole]);
+  }, [topic, role, sessionExpiresAt, username, isHostRole, selfCountry, updatePeerInfo]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -539,6 +627,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       senderId: clientIdRef.current,
       senderRole: role,
       senderName: username,
+      senderCountry: selfCountry,
       text: messageText,
     });
 
@@ -601,6 +690,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           senderId: clientIdRef.current,
           senderRole: role,
           senderName: username,
+          senderCountry: selfCountry,
           text: 'Host killed this room.',
         })
       );
@@ -613,6 +703,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           senderId: clientIdRef.current,
           senderRole: role,
           senderName: username,
+          senderCountry: selfCountry,
         })
       );
       await notifyGuestLeaveApi();
@@ -643,14 +734,17 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     ? username.trim()
     : isHostRole
       ? 'Host'
-      : 'Guest';
-  const localeRegion = typeof navigator !== 'undefined'
-    ? new Intl.DateTimeFormat().resolvedOptions().region || navigator.language?.split('-')[1] || ''
-    : '';
-  const countryFlag = getCountryFlag(localeRegion);
+      : 'Client';
+  const hostName = isHostRole ? displayName : peerName || 'Host';
+  const clientName = isHostRole ? peerName || 'Client' : displayName;
+  const hostFlagSource = getCountryFlagSource(isHostRole ? selfCountry : peerCountry);
+  const clientFlagSource = getCountryFlagSource(isHostRole ? peerCountry : selfCountry);
+  const showHostCard = true;
+  const showClientCard = !isHostRole || isPeerJoined;
 
   return (
     <div className="room-tab-page">
+      {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
       <div className="room-panel">
         <div className="room-top-row">
           <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
@@ -667,11 +761,28 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             {isHostRole ? 'Kill room' : 'Exit'}
           </button>
         </div>
-        <div className="room-user-location">
-          <span className="room-user-flag">{countryFlag}</span>
-          <span className="room-user-name">{displayName}</span>
+        <div className="room-user-row">
+          {showClientCard && (
+            <div className="room-user-card left">
+              {clientFlagSource ? (
+                <img className="room-user-flag-img" src={clientFlagSource} alt="Client flag" />
+              ) : (
+                <span className="room-user-flag">🏳️</span>
+              )}
+              <span className="room-user-name">{clientName}</span>
+            </div>
+          )}
+          {showHostCard && (
+            <div className="room-user-card right">
+              {hostFlagSource ? (
+                <img className="room-user-flag-img" src={hostFlagSource} alt="Host flag" />
+              ) : (
+                <span className="room-user-flag">🏳️</span>
+              )}
+              <span className="room-user-name">{hostName}</span>
+            </div>
+          )}
         </div>
-        {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
         {isWaiting && (
@@ -798,6 +909,18 @@ function App() {
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
+  }, [locatedPosition]);
+
+  useEffect(() => {
+    if (!locatedPosition) {
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setLocatedPosition(null);
+    }, 6000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [locatedPosition]);
 
   const handleCreateRoom = async roomData => {
@@ -1164,6 +1287,7 @@ function App() {
         onCancelScan={handleCancelScan}
         mapTheme={mapTheme}
         onToggleMapTheme={handleToggleMapTheme}
+        showThemeToggle={!activeChatRoom}
       />
       <MenuButton
         onCreateRoom={handleCreateRoom}

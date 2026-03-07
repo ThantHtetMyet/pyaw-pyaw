@@ -1167,7 +1167,14 @@ code {
   color: #d9defb;
 }
 
-.room-user-location {
+.room-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.room-user-card {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1177,12 +1184,22 @@ code {
   background: rgba(8, 10, 15, 0.38);
   color: #e8ecff;
   font-weight: 600;
-  flex-wrap: wrap;
+}
+
+.room-user-card.right {
+  margin-left: auto;
 }
 
 .room-user-flag {
   font-size: 1.05rem;
   line-height: 1;
+}
+
+.room-user-flag-img {
+  width: 24px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: cover;
 }
 
 .room-user-name {
@@ -1197,6 +1214,13 @@ code {
   color: #eafff1;
   font-weight: 700;
   padding: 8px 12px;
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1205;
+  box-shadow: 0 18px 32px rgba(7, 12, 30, 0.35);
+  backdrop-filter: blur(10px);
 }
 
 .room-waiting {

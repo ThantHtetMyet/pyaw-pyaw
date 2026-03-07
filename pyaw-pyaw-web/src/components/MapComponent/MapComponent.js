@@ -166,6 +166,7 @@ function MapComponent({
   onOpenRoom,
   mapTheme = 'light',
   onToggleMapTheme,
+  showThemeToggle = true,
 }) {
   const defaultPosition = [51.505, -0.09];
   const isDarkTheme = mapTheme === 'dark';
@@ -456,29 +457,31 @@ function MapComponent({
           );
         })}
       </MapContainer>
-      <div
-        className={`map-theme-toggle ${isDarkTheme ? 'dark' : 'light'}`}
-        role="group"
-        aria-label="Map theme"
-        onClick={() => onToggleMapTheme?.()}
-      >
-        <button
-          type="button"
-          className="map-theme-toggle-option"
-          aria-pressed={!isDarkTheme}
-          data-theme="light"
+      {showThemeToggle && (
+        <div
+          className={`map-theme-toggle ${isDarkTheme ? 'dark' : 'light'}`}
+          role="group"
+          aria-label="Map theme"
+          onClick={() => onToggleMapTheme?.()}
         >
-          White
-        </button>
-        <button
-          type="button"
-          className="map-theme-toggle-option"
-          aria-pressed={isDarkTheme}
-          data-theme="dark"
-        >
-          Black
-        </button>
-      </div>
+          <button
+            type="button"
+            className="map-theme-toggle-option"
+            aria-pressed={!isDarkTheme}
+            data-theme="light"
+          >
+            White
+          </button>
+          <button
+            type="button"
+            className="map-theme-toggle-option"
+            aria-pressed={isDarkTheme}
+            data-theme="dark"
+          >
+            Black
+          </button>
+        </div>
+      )}
       {isSearchingRooms && (
         <div className="scan-modal-backdrop">
           <div className="scan-modal-panel">
