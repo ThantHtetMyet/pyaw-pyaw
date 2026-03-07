@@ -1162,11 +1162,13 @@ code {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
+  gap: 0;
   padding: calc(18px + var(--room-header-height, 0px)) 18px calc(18px + var(--keyboard-inset, 0px));
   box-sizing: border-box;
   overflow: hidden;
-  position: relative;
+  position: fixed;
+  inset: 0;
+  width: 100%;
 }
 
 .room-tab-page::before,
@@ -1196,12 +1198,12 @@ code {
 
 .room-header {
   position: fixed;
-  top: var(--visual-viewport-top, 0px);
+  top: 0;
   z-index: 1100;
   width: 100%;
   display: flex;
   justify-content: center;
-  padding: 14px 18px 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
@@ -1218,9 +1220,12 @@ code {
   flex-direction: column;
   gap: 10px;
   color: #ffffff;
-  background: linear-gradient(180deg, rgba(10, 14, 30, 0.98), rgba(9, 12, 25, 0.96));
+  background:
+    radial-gradient(circle at 20% 0%, rgba(99, 148, 255, 0.18), rgba(99, 148, 255, 0) 44%),
+    linear-gradient(180deg, rgba(9, 14, 31, 0.99), rgba(8, 11, 24, 0.97));
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 22px rgba(4, 8, 20, 0.34);
+  box-shadow: 0 12px 24px rgba(4, 8, 20, 0.36);
+  border-top: 1px solid rgba(166, 199, 255, 0.25);
   border-bottom: 1px solid var(--room-line-color);
 }
 
@@ -1251,6 +1256,8 @@ code {
   flex-direction: column;
   gap: 8px;
   padding: 10px var(--room-row-inline-padding) 8px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(9, 12, 25, 0.96), rgba(8, 10, 20, 0.98));
 }
 
 
@@ -1703,7 +1710,7 @@ code {
   }
 
   .room-header {
-    padding: 6px 12px 0;
+    padding: 0;
   }
 
   .room-header-row {

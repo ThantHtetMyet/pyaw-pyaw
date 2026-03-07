@@ -312,9 +312,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     }
 
     const updateViewportOffsets = () => {
-      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      const inset = Math.max(0, window.innerHeight - viewport.height);
       document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
-      document.documentElement.style.setProperty('--visual-viewport-top', `${Math.round(Math.max(0, viewport.offsetTop))}px`);
+      document.documentElement.style.setProperty('--visual-viewport-top', '0px');
       if (showChatInterface) {
         window.requestAnimationFrame(() => scrollToBottom('auto'));
       }
@@ -322,11 +322,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
     updateViewportOffsets();
     viewport.addEventListener('resize', updateViewportOffsets);
-    viewport.addEventListener('scroll', updateViewportOffsets);
 
     return () => {
       viewport.removeEventListener('resize', updateViewportOffsets);
-      viewport.removeEventListener('scroll', updateViewportOffsets);
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
       document.documentElement.style.setProperty('--visual-viewport-top', '0px');
     };
@@ -430,11 +428,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     updateHeaderHeight();
     window.addEventListener('resize', updateHeaderHeight);
     viewport?.addEventListener('resize', updateHeaderHeight);
-    viewport?.addEventListener('scroll', updateHeaderHeight);
     return () => {
       window.removeEventListener('resize', updateHeaderHeight);
       viewport?.removeEventListener('resize', updateHeaderHeight);
-      viewport?.removeEventListener('scroll', updateHeaderHeight);
     };
   }, []);
 
