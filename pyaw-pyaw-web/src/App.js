@@ -250,6 +250,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const joinNoticeTimerRef = useRef(null);
   const baseInputRef = useRef(null);
   const headerRef = useRef(null);
@@ -276,6 +277,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   };
 
   const scrollToBottom = (behavior = 'smooth') => {
+    const messagesContainer = messagesContainerRef.current;
+    if (messagesContainer) {
+      if (behavior === 'smooth') {
+        messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+      } else {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
   };
 
@@ -902,7 +912,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           </div>
         )}
         {showChatInterface && (
-          <div className="chat-messages">
+          <div className="chat-messages" ref={messagesContainerRef}>
             {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
             {messages.map(message => (
               <div
