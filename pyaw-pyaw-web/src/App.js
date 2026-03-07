@@ -171,6 +171,14 @@ function writeHiddenTopics(topics) {
   window.localStorage.setItem(HIDDEN_TOPICS_KEY, JSON.stringify(Array.from(topics)));
 }
 
+function getCountryFlag(countryCode) {
+  if (!countryCode || countryCode.length !== 2) {
+    return '🏳️';
+  }
+  const codePoints = [...countryCode.toUpperCase()].map(char => 127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
+
 function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [isPeerJoined, setIsPeerJoined] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -182,10 +190,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
     Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000))
   );
+  const [joinNotice, setJoinNotice] = useState('');
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
+  const joinNoticeTimerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -223,6 +233,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
     return () => window.clearInterval(timer);
   }, [sessionExpiresAt]);
+
+  useEffect(
+    () => () => {
+      if (joinNoticeTimerRef.current) {
+        window.clearTimeout(joinNoticeTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -361,6 +380,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             if (presenceType === 'leave') {
               setIsPeerJoined(false);
               hasSeenPeerRef.current = false;
+              setJoinNotice('');
               if (role === 'host') {
                 setShowChatInterface(false);
                 setMessages([]);
@@ -370,6 +390,18 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             }
             setIsPeerJoined(true);
             setShowChatInterface(true);
+            if (presenceType === 'join' && isHostRole) {
+              const senderName = typeof payload?.senderName === 'string' && payload.senderName.trim()
+                ? payload.senderName.trim()
+                : 'Guest';
+              setJoinNotice(`${senderName} joined the room`);
+              if (joinNoticeTimerRef.current) {
+                window.clearTimeout(joinNoticeTimerRef.current);
+              }
+              joinNoticeTimerRef.current = window.setTimeout(() => {
+                setJoinNotice('');
+              }, 3000);
+            }
             if (presenceType === 'join' && !hasSeenPeerRef.current && mqttClient.connected) {
               hasSeenPeerRef.current = true;
               mqttClient.publish(
@@ -422,7 +454,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, sessionExpiresAt, username]);
+  }, [topic, role, sessionExpiresAt, username, isHostRole]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -607,6 +639,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
   const timerMinutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
   const timerSeconds = String(remainingSeconds % 60).padStart(2, '0');
+  const displayName = typeof username === 'string' && username.trim()
+    ? username.trim()
+    : isHostRole
+      ? 'Host'
+      : 'Guest';
+  const localeRegion = typeof navigator !== 'undefined'
+    ? new Intl.DateTimeFormat().resolvedOptions().region || navigator.language?.split('-')[1] || ''
+    : '';
+  const countryFlag = getCountryFlag(localeRegion);
 
   return (
     <div className="room-tab-page">
@@ -626,6 +667,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             {isHostRole ? 'Kill room' : 'Exit'}
           </button>
         </div>
+        <div className="room-user-location">
+          <span className="room-user-flag">{countryFlag}</span>
+          <span className="room-user-name">{displayName}</span>
+        </div>
+        {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
         {isWaiting && (
@@ -700,6 +746,7 @@ function App() {
   const [scanResult, setScanResult] = useState('idle');
   const [isNoRoomVisible, setIsNoRoomVisible] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
+  const [mapTheme, setMapTheme] = useState('light');
   const activeScanIdRef = useRef(0);
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const roomTopicFromUrl = searchParams.get('roomTopic');
@@ -714,6 +761,9 @@ function App() {
   const [roomToJoin, setRoomToJoin] = useState(null);
   const [joinUsername, setJoinUsername] = useState('');
   const [activeChatRoom, setActiveChatRoom] = useState(null);
+  const handleToggleMapTheme = useCallback(() => {
+    setMapTheme(prevTheme => (prevTheme === 'dark' ? 'light' : 'dark'));
+  }, []);
 
   const hideRoomTopic = useCallback(topic => {
     if (!topic) {
@@ -1112,6 +1162,8 @@ function App() {
         showNoRoomFound={!isSearchingRooms && scanResult === 'empty' && isNoRoomVisible}
         onDismissNoRoom={handleDismissNoRoom}
         onCancelScan={handleCancelScan}
+        mapTheme={mapTheme}
+        onToggleMapTheme={handleToggleMapTheme}
       />
       <MenuButton
         onCreateRoom={handleCreateRoom}
@@ -1119,6 +1171,7 @@ function App() {
         onJoinRoom={handleJoinRoom}
         onLocate={handleLocate}
         onResumeRoom={handleOpenRoom}
+        mapTheme={mapTheme}
       />
       {joinModalOpen && (
         <div className="glass-modal-backdrop" onClick={() => setJoinModalOpen(false)}>

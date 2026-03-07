@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './MenuButton.css';
 
-function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
+function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom, mapTheme = 'light' }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedGender, setSelectedGender] = useState('Male');
@@ -217,7 +217,7 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom }) {
 
   return (
     <>
-      <div ref={containerRef} className={`menu-button-container ${isOpen ? 'open' : ''}`}>
+      <div ref={containerRef} className={`menu-button-container ${isOpen ? 'open' : ''} menu-theme-${mapTheme}`}>
         <div className={`menu-button ${isOpen ? 'open' : ''}`}>
           <div className="menu-button-inner" onClick={handleClick}>
             Menu

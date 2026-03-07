@@ -1167,6 +1167,38 @@ code {
   color: #d9defb;
 }
 
+.room-user-location {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(8, 10, 15, 0.38);
+  color: #e8ecff;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.room-user-flag {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.room-user-name {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.room-join-notice {
+  border-radius: 10px;
+  border: 1px solid rgba(160, 245, 190, 0.45);
+  background: rgba(30, 150, 90, 0.18);
+  color: #eafff1;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
 .room-waiting {
   min-height: 280px;
   display: flex;

@@ -164,9 +164,10 @@ function MapComponent({
   onCancelScan,
   onJoinRoom,
   onOpenRoom,
+  mapTheme = 'light',
+  onToggleMapTheme,
 }) {
   const defaultPosition = [51.505, -0.09];
-  const [mapTheme, setMapTheme] = useState('light');
   const isDarkTheme = mapTheme === 'dark';
   const tileUrl = isDarkTheme
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -459,7 +460,7 @@ function MapComponent({
         className={`map-theme-toggle ${isDarkTheme ? 'dark' : 'light'}`}
         role="group"
         aria-label="Map theme"
-        onClick={() => setMapTheme(isDarkTheme ? 'light' : 'dark')}
+        onClick={() => onToggleMapTheme?.()}
       >
         <button
           type="button"

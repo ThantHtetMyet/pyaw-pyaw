@@ -1,5 +1,5 @@
 .menu-button-container {
-  position: absolute;
+  position: fixed;
   bottom: 20px;
   left: 20px;
   z-index: 1000; /* Ensure it's above the map */
@@ -45,8 +45,8 @@
   width: 70px; /* Slightly smaller than .menu-button to create border effect */
   height: 70px; /* Slightly smaller than .menu-button to create border effect */
   border-radius: 50%;
-  background-color: black;
-  color: white;
+  background: radial-gradient(circle at 30% 30%, #ffffff 0%, #eef1ff 70%, #d9e1ff 100%);
+  color: #1a1e2d;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -55,6 +55,11 @@
   cursor: pointer;
   position: relative; /* Ensure z-index works */
   z-index: 1; /* Place it above the ::before pseudo-element */
+}
+
+.menu-button-container.menu-theme-light .menu-button-inner {
+  background: radial-gradient(circle at 30% 30%, #2a2f48 0%, #1b2037 70%, #101427 100%);
+  color: #f7f7ff;
 }
 
 .sub-menu-item {
@@ -106,8 +111,12 @@
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 25%, #1a1a1a 0%, #0c0c0c 62%, #000000 100%);
+  background: radial-gradient(circle at 30% 25%, #ffffff 0%, #eef1ff 62%, #d9e1ff 100%);
   z-index: 1;
+}
+
+.menu-button-container.menu-theme-light .sub-menu-item::after {
+  background: radial-gradient(circle at 30% 25%, #2a2f48 0%, #1b2037 62%, #101427 100%);
 }
 
 .sub-menu-label {
@@ -116,7 +125,11 @@
   align-items: center;
   position: relative;
   z-index: 2;
-  color: white;
+  color: #1a1e2d;
+}
+
+.menu-button-container.menu-theme-light .sub-menu-label {
+  color: #f7f7ff;
 }
 
 .sub-menu-icon {
@@ -211,8 +224,9 @@
   font-size: 0.82rem;
   font-weight: 600;
   position: fixed;
-  right: 20px;
-  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 1201;
 }
 
