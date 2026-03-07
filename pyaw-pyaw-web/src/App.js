@@ -237,6 +237,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [messages, setMessages] = useState([]);
   const [showChatInterface, setShowChatInterface] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
   const [isRoomKilled, setIsRoomKilled] = useState(false);
@@ -246,16 +247,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [joinNotice, setJoinNotice] = useState('');
   const [peerName, setPeerName] = useState('');
   const [peerCountry, setPeerCountry] = useState('');
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
-  const [isInputFocused, setIsInputFocused] = useState(false);
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const viewportBaseHeightRef = useRef(0);
   const joinNoticeTimerRef = useRef(null);
-  const baseInputRef = useRef(null);
   const headerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
@@ -312,50 +309,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     },
     []
   );
-
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    viewportBaseHeightRef.current = Math.max(
-      viewportBaseHeightRef.current,
-      window.innerHeight,
-      viewport?.height || 0
-    );
-    if (!viewport) {
-      document.documentElement.style.setProperty('--keyboard-inset', '0px');
-      document.documentElement.style.setProperty('--visual-viewport-top', '0px');
-      setIsKeyboardOpen(false);
-      return () => {
-        document.documentElement.style.setProperty('--keyboard-inset', '0px');
-        document.documentElement.style.setProperty('--visual-viewport-top', '0px');
-        setIsKeyboardOpen(false);
-      };
-    }
-
-    const updateViewportOffsets = () => {
-      const viewportHeight = viewport.height + viewport.offsetTop;
-      if (viewportHeight > viewportBaseHeightRef.current) {
-        viewportBaseHeightRef.current = viewportHeight;
-      }
-      const rawInset = Math.max(0, viewportBaseHeightRef.current - viewportHeight);
-      const keyboardInset = rawInset > 110 ? rawInset : 0;
-      document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(keyboardInset)}px`);
-      document.documentElement.style.setProperty('--visual-viewport-top', '0px');
-      setIsKeyboardOpen(keyboardInset > 0);
-      if (showChatInterface) {
-        window.requestAnimationFrame(() => scrollToBottom('auto'));
-      }
-    };
-
-    updateViewportOffsets();
-    viewport.addEventListener('resize', updateViewportOffsets);
-
-    return () => {
-      viewport.removeEventListener('resize', updateViewportOffsets);
-      document.documentElement.style.setProperty('--keyboard-inset', '0px');
-      document.documentElement.style.setProperty('--visual-viewport-top', '0px');
-      setIsKeyboardOpen(false);
-    };
-  }, [showChatInterface]);
 
   const isWaiting = !isPeerJoined && !isExpired;
   const [selfCountry, setSelfCountry] = useState('');
@@ -728,7 +681,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const handleSendMessage = () => {
     const messageText = inputValue.trim();
     if (!messageText || !mqttClientRef.current?.connected || isChatLocked) {
-      return;
+      return false;
     }
 
     const payload = JSON.stringify({
@@ -743,6 +696,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     mqttClientRef.current.publish(`${topic}/chat`, payload);
     addMessage(username || (role === 'host' ? 'Host' : 'Guest'), messageText, { isOwn: true });
     setInputValue('');
+    return true;
   };
 
   const notifyMapAndClose = payload => {
@@ -853,10 +807,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const senderCountryName = getCountryName(senderCountryCode) || 'Unknown country';
   const receiverCountryName = getCountryName(receiverCountryCode) || 'Unknown country';
   const showReceiverCard = !isHostRole || isPeerJoined;
-  const isCompactMobileLayout = showChatInterface && (isKeyboardOpen || isInputFocused);
 
   return (
-    <div className={`room-tab-page ${isCompactMobileLayout ? 'keyboard-open' : ''}`}>
+    <div className="room-tab-page">
       {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
       <div className="room-header" ref={headerRef}>
         <div className="room-header-row">
@@ -953,24 +906,24 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       {showChatInterface && (
         <div className="room-footer">
           <div className="chat-input-row">
-            <input
-              ref={baseInputRef}
-              className="chat-input"
-              value={inputValue}
-              onChange={event => setInputValue(event.target.value)}
-              onFocus={() => {
-                setIsInputFocused(true);
-                window.requestAnimationFrame(() => scrollToBottom('auto'));
-              }}
-              onBlur={() => setIsInputFocused(false)}
-              onKeyDown={event => event.key === 'Enter' && handleSendMessage()}
-              placeholder="Type a message..."
+            <button
+              type="button"
+              className="chat-compose-button"
+              onClick={() => setIsComposeModalOpen(true)}
               disabled={isChatLocked}
-            />
+            >
+              Type a message...
+            </button>
             <button
               type="button"
               className="chat-send-button"
-              onClick={handleSendMessage}
+              onClick={() => {
+                if (handleSendMessage()) {
+                  setIsComposeModalOpen(false);
+                } else {
+                  setIsComposeModalOpen(true);
+                }
+              }}
               disabled={isChatLocked}
               aria-label="Send message"
             >
@@ -978,6 +931,50 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
                 <path d="M3.4 11.4 19.8 4.4c.9-.4 1.8.5 1.5 1.4l-3.8 13.7c-.3 1-1.6 1.2-2.2.4l-3.2-4-3.9 3.4c-.5.4-1.2.1-1.3-.6l-.8-5.1-2.8-1.1c-.9-.3-1-.9-.1-1.3Z" />
               </svg>
             </button>
+          </div>
+        </div>
+      )}
+      {showChatInterface && isComposeModalOpen && (
+        <div className="room-compose-overlay" onClick={() => setIsComposeModalOpen(false)}>
+          <div className="room-compose-modal" onClick={event => event.stopPropagation()}>
+            <div className="room-compose-header">
+              <div className="room-compose-title">Type Message</div>
+              <button
+                type="button"
+                className="room-compose-close"
+                onClick={() => setIsComposeModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <textarea
+              className="room-compose-textarea"
+              value={inputValue}
+              onChange={event => setInputValue(event.target.value)}
+              placeholder="Type a message..."
+              disabled={isChatLocked}
+            />
+            <div className="room-compose-actions">
+              <button
+                type="button"
+                className="room-compose-cancel"
+                onClick={() => setIsComposeModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="room-compose-send"
+                onClick={() => {
+                  if (handleSendMessage()) {
+                    setIsComposeModalOpen(false);
+                  }
+                }}
+                disabled={isChatLocked}
+              >
+                Send
+              </button>
+            </div>
           </div>
         </div>
       )}

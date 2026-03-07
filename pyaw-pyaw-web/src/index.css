@@ -1655,15 +1655,17 @@ code {
   flex-wrap: nowrap;
 }
 
-.chat-input {
+.chat-compose-button {
   flex: 1;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(8, 10, 15, 0.5);
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.78);
   padding: 10px 12px;
   font: inherit;
   font-size: 16px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .chat-send-button {
@@ -1688,7 +1690,88 @@ code {
 }
 
 .chat-send-button:disabled,
-.chat-input:disabled {
+.chat-compose-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.room-compose-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  background: rgba(2, 4, 10, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.room-compose-modal {
+  width: min(560px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(141, 179, 255, 0.5);
+  background: linear-gradient(160deg, rgba(18, 30, 78, 0.95), rgba(5, 14, 46, 0.97));
+  box-shadow: 0 24px 56px rgba(4, 10, 26, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.room-compose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.room-compose-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(236, 242, 255, 0.95);
+}
+
+.room-compose-close,
+.room-compose-cancel,
+.room-compose-send {
+  border-radius: 10px;
+  border: 1px solid rgba(170, 190, 255, 0.56);
+  background: rgba(12, 24, 62, 0.65);
+  color: #f3f6ff;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.room-compose-textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid rgba(184, 203, 255, 0.48);
+  background: rgba(7, 14, 34, 0.75);
+  color: #f8fbff;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.room-compose-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.room-compose-send {
+  background: linear-gradient(135deg, rgba(122, 107, 255, 0.86), rgba(56, 168, 255, 0.74));
+}
+
+.room-compose-send:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -1714,7 +1797,7 @@ code {
     --room-frame-width: min(760px, calc(100% - 12px));
     align-items: center;
     justify-content: flex-start;
-    padding: calc(12px + var(--room-header-height, 0px)) 12px calc(12px + var(--keyboard-inset, 0px));
+    padding: calc(12px + var(--room-header-height, 0px)) 12px 12px;
     --room-row-inline-padding: clamp(14px, 4vw, 20px);
   }
 
@@ -1748,34 +1831,19 @@ code {
     flex-direction: row;
   }
 
-  .room-tab-page.keyboard-open {
-    padding: calc(6px + var(--room-header-height, 0px)) 8px calc(6px + var(--keyboard-inset, 0px));
-    --room-row-inline-padding: 12px;
+  .room-compose-overlay {
+    align-items: flex-end;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
-  .room-tab-page.keyboard-open .room-header-row {
-    padding: 8px 10px 6px;
-    gap: 6px;
+  .room-compose-modal {
+    width: 100%;
+    max-height: 80dvh;
   }
 
-  .room-tab-page.keyboard-open .room-top-row {
-    gap: 10px;
-  }
-
-  .room-tab-page.keyboard-open .room-user-row {
-    display: none;
-  }
-
-  .room-tab-page.keyboard-open .room-body {
-    padding: 8px 10px 6px;
-  }
-
-  .room-tab-page.keyboard-open .room-footer {
-    padding: 8px 10px calc(6px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .room-tab-page.keyboard-open .chat-messages {
-    padding: 4px 10px 4px 4px;
+  .room-compose-textarea {
+    min-height: 110px;
+    max-height: 34dvh;
   }
 }
 
