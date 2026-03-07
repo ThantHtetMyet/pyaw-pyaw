@@ -10,6 +10,7 @@ const CLIENT_ID_KEY = 'pyaw-pyaw-client-id';
 const MIN_SCAN_VISIBILITY_MS = 5 * 1000;
 const ROOM_ACTIVITY_EVENT_KEY = 'pyaw-pyaw-room-activity-event';
 const HIDDEN_TOPICS_KEY = 'pyaw-pyaw-hidden-topics';
+const KICKED_TOPICS_KEY = 'pyaw-pyaw-kicked-topics';
 
 function normalizeBaseUrl(urlText) {
   return (urlText || '').trim().replace(/\/+$/, '');
@@ -173,6 +174,26 @@ function readHiddenTopics() {
 
 function writeHiddenTopics(topics) {
   window.localStorage.setItem(HIDDEN_TOPICS_KEY, JSON.stringify(Array.from(topics)));
+}
+
+function readKickedTopics() {
+  try {
+    const raw = window.localStorage.getItem(KICKED_TOPICS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(topic => typeof topic === 'string' && topic.trim());
+  } catch {
+    return [];
+  }
+}
+
+function writeKickedTopics(topics) {
+  window.localStorage.setItem(KICKED_TOPICS_KEY, JSON.stringify(Array.from(topics)));
 }
 
 function normalizeCountryCode(countryCode) {
@@ -1155,6 +1176,7 @@ function App() {
   const [createdRoom, setCreatedRoom] = useState(null);
   const [hostRoomTopic, setHostRoomTopic] = useState(() => getStoredHostRoomTopic());
   const [hiddenTopics, setHiddenTopics] = useState(() => new Set(readHiddenTopics()));
+  const [kickedTopics, setKickedTopics] = useState(() => new Set(readKickedTopics()));
   const [locatedPosition, setLocatedPosition] = useState(null);
   const [searchedRooms, setSearchedRooms] = useState([]);
   const [isSearchingRooms, setIsSearchingRooms] = useState(false);
@@ -1192,6 +1214,22 @@ function App() {
     });
     setSearchedRooms(prev => prev.filter(room => room.topic !== topic));
     setCreatedRoom(prev => (prev?.topic === topic ? null : prev));
+  }, []);
+
+  const blockKickedTopic = useCallback(topic => {
+    if (!topic) {
+      return;
+    }
+    setKickedTopics(prev => {
+      if (prev.has(topic)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(topic);
+      writeKickedTopics(next);
+      return next;
+    });
+    setSearchedRooms(prev => prev.filter(room => room.topic !== topic));
   }, []);
 
   // Initial Geolocation Request
@@ -1292,8 +1330,13 @@ function App() {
             availability: room.lastGuestId ? 'busy' : 'idle',
           };
         })
-        .filter(room => isFutureTimestamp(room.sessionExpiresAt) && !hiddenTopics.has(room.topic)),
-    [hiddenTopics]
+        .filter(
+          room =>
+            isFutureTimestamp(room.sessionExpiresAt) &&
+            !hiddenTopics.has(room.topic) &&
+            !kickedTopics.has(room.topic)
+        ),
+    [hiddenTopics, kickedTopics]
   );
 
   const refreshRoomsSilently = useCallback(async () => {
@@ -1353,6 +1396,10 @@ function App() {
     if (!room?.topic || !room?.sessionExpiresAt) {
       return false;
     }
+    if (kickedTopics.has(room.topic)) {
+      setModalMessage('This host is not available for you now.');
+      return false;
+    }
     setRoomToJoin(room);
     setJoinUsername('');
     setJoinModalOpen(true);
@@ -1380,6 +1427,12 @@ function App() {
       return;
     }
     const room = roomToJoin;
+    if (kickedTopics.has(room.topic)) {
+      setJoinModalOpen(false);
+      setRoomToJoin(null);
+      setModalMessage('This host is not available for you now.');
+      return;
+    }
     try {
       const response = await requestJson('/api/rooms/join', {
         method: 'POST',
@@ -1407,6 +1460,9 @@ function App() {
     payload => {
       setActiveChatRoom(null);
       if (payload?.kickedOut) {
+        if (payload?.topic) {
+          blockKickedTopic(payload.topic);
+        }
         setModalMessage('You were kicked out by host.');
       }
       if (payload?.terminatedByHost) {
@@ -1417,7 +1473,7 @@ function App() {
       }
       refreshRoomsSilently().catch(() => {});
     },
-    [hideRoomTopic, refreshRoomsSilently]
+    [blockKickedTopic, hideRoomTopic, refreshRoomsSilently]
   );
 
   const handleLocate = position => {
@@ -1448,6 +1504,9 @@ function App() {
       }
       setCreatedRoom(null);
       if (event.data?.kickedOut) {
+        if (event.data?.topic) {
+          blockKickedTopic(event.data.topic);
+        }
         setModalMessage('You were kicked out by host.');
       }
       if (event.data?.terminatedByHost) {
@@ -1464,7 +1523,7 @@ function App() {
     return () => {
       window.removeEventListener('message', handleRoomExitMessage);
     };
-  }, [hideRoomTopic, refreshRoomsSilently]);
+  }, [blockKickedTopic, hideRoomTopic, refreshRoomsSilently]);
 
   useEffect(() => {
     const handleStorage = event => {
