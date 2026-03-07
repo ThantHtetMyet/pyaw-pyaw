@@ -1457,14 +1457,6 @@ code {
   cursor: not-allowed;
 }
 
-.chat-box {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  flex: 1;
-}
-
 .room-connected-banner {
   border-radius: 12px;
   border: 1px solid rgba(160, 245, 190, 0.4);
@@ -1482,13 +1474,13 @@ code {
 }
 
 .chat-messages {
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(8, 10, 15, 0.4);
+  border-radius: 0;
+  border: none;
+  background: transparent;
   min-height: 0;
   max-height: none;
   overflow: auto;
-  padding: 12px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1685,15 +1677,6 @@ code {
   .room-user-row {
     flex-wrap: wrap;
     row-gap: 8px;
-  }
-
-  .chat-box {
-    flex: 0 1 auto;
-  }
-
-  .chat-messages {
-    min-height: 180px;
-    max-height: min(48dvh, 360px);
   }
 
   .chat-message-item {

@@ -894,20 +894,18 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           </div>
         )}
         {showChatInterface && (
-          <div className="chat-box">
-            <div className="chat-messages">
-              {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
-              {messages.map(message => (
-                <div
-                  key={message.id}
-                  className={`chat-message-item ${message.type === 'system' ? 'system' : message.isOwn ? 'own' : 'peer'}`}
-                >
-                  <div className="chat-message-meta">{message.sender}</div>
-                  <div className="chat-message-bubble">{message.text}</div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
+          <div className="chat-messages">
+            {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
+            {messages.map(message => (
+              <div
+                key={message.id}
+                className={`chat-message-item ${message.type === 'system' ? 'system' : message.isOwn ? 'own' : 'peer'}`}
+              >
+                <div className="chat-message-meta">{message.sender}</div>
+                <div className="chat-message-bubble">{message.text}</div>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
           </div>
         )}
       </div>
