@@ -1745,6 +1745,18 @@ code {
   cursor: pointer;
 }
 
+.room-compose-close {
+  min-width: 38px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
 .room-compose-textarea {
   width: 100%;
   min-height: 120px;
@@ -1832,7 +1844,8 @@ code {
   }
 
   .room-compose-overlay {
-    align-items: flex-end;
+    align-items: center;
+    justify-content: center;
     padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
   }
 

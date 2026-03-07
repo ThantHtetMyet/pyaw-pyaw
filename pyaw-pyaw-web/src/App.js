@@ -252,6 +252,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const composeTextareaRef = useRef(null);
   const joinNoticeTimerRef = useRef(null);
   const headerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
@@ -309,6 +310,18 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     },
     []
   );
+
+  useEffect(() => {
+    if (!isComposeModalOpen) {
+      return undefined;
+    }
+    const frameId = window.requestAnimationFrame(() => {
+      composeTextareaRef.current?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [isComposeModalOpen]);
 
   const isWaiting = !isPeerJoined && !isExpired;
   const [selfCountry, setSelfCountry] = useState('');
@@ -699,6 +712,13 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     return true;
   };
 
+  const openComposeModal = () => {
+    setIsComposeModalOpen(true);
+    window.requestAnimationFrame(() => {
+      composeTextareaRef.current?.focus();
+    });
+  };
+
   const notifyMapAndClose = payload => {
     try {
       if (window.opener && !window.opener.closed) {
@@ -909,7 +929,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             <button
               type="button"
               className="chat-compose-button"
-              onClick={() => setIsComposeModalOpen(true)}
+              onClick={openComposeModal}
               disabled={isChatLocked}
             >
               Type a message...
@@ -921,7 +941,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
                 if (handleSendMessage()) {
                   setIsComposeModalOpen(false);
                 } else {
-                  setIsComposeModalOpen(true);
+                  openComposeModal();
                 }
               }}
               disabled={isChatLocked}
@@ -942,12 +962,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               <button
                 type="button"
                 className="room-compose-close"
+                aria-label="Close compose modal"
                 onClick={() => setIsComposeModalOpen(false)}
               >
-                Close
+                ×
               </button>
             </div>
             <textarea
+              ref={composeTextareaRef}
               className="room-compose-textarea"
               value={inputValue}
               onChange={event => setInputValue(event.target.value)}
