@@ -252,6 +252,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const messagesEndRef = useRef(null);
   const joinNoticeTimerRef = useRef(null);
   const baseInputRef = useRef(null);
+  const headerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -412,6 +413,18 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       setShowChatInterface(true);
     }
   }, [isWaiting, isExpired, showChatInterface]);
+
+  useEffect(() => {
+    const updateHeaderHeight = () => {
+      const headerHeight = headerRef.current?.offsetHeight || 0;
+      document.documentElement.style.setProperty('--room-header-height', `${headerHeight}px`);
+    };
+    updateHeaderHeight();
+    window.addEventListener('resize', updateHeaderHeight);
+    return () => {
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
 
 
   useEffect(() => {
@@ -804,8 +817,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   return (
     <div className="room-tab-page">
       {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
-      <div className="room-header">
-        <div className="room-header-panel">
+      <div className="room-header" ref={headerRef}>
+        <div className="room-header-row">
           <div className="room-top-row">
             <div className={`room-timer ${isExpired ? 'expired' : ''}`}>Session Time Left: {timerMinutes}:{timerSeconds}</div>
             <button
@@ -851,7 +864,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           </div>
         </div>
       </div>
-      <div className="room-panel">
+      <div className="room-body">
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
         {isWaiting && (
@@ -895,24 +908,28 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               ))}
               <div ref={messagesEndRef} />
             </div>
-            <div className="chat-input-row">
-              <input
-                ref={baseInputRef}
-                className="chat-input"
-                value={inputValue}
-                onChange={event => setInputValue(event.target.value)}
-                onKeyDown={event => event.key === 'Enter' && handleSendMessage()}
-                placeholder="Type a message..."
-                disabled={isChatLocked}
-              />
-              <button type="button" className="chat-send-button" onClick={handleSendMessage} disabled={isChatLocked}>
-                Send
-              </button>
-            </div>
           </div>
         )}
-        {transportError && <div className="room-error">{transportError}</div>}
       </div>
+      {showChatInterface && (
+        <div className="room-footer">
+          <div className="chat-input-row">
+            <input
+              ref={baseInputRef}
+              className="chat-input"
+              value={inputValue}
+              onChange={event => setInputValue(event.target.value)}
+              onKeyDown={event => event.key === 'Enter' && handleSendMessage()}
+              placeholder="Type a message..."
+              disabled={isChatLocked}
+            />
+            <button type="button" className="chat-send-button" onClick={handleSendMessage} disabled={isChatLocked}>
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+      {transportError && <div className="room-error">{transportError}</div>}
     </div>
   );
 }
