@@ -97,12 +97,11 @@ function createMessageMarkerIcon(gender, messageType, availability = 'idle') {
   const availabilityClass = availability === 'busy' ? 'status-busy' : 'status-idle';
 
   if (messageType === 'Help') {
-    const helpPath = "M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10s10-4.48,10-10S17.52,2,12,2z M12,20c-4.41,0-8-3.59-8-8s3.59-8,8-8 s8,3.59,8,8S16.41,20,12,20z M12,6c-3.31,0-6,2.69-6,6s2.69,6,6,6s6-2.69,6-6S15.31,6,12,6z";
     return L.divIcon({
       html: `<div class="user-hand-marker ${genderClass} ${availabilityClass} help-marker">
               <div class="marker-hand-halo">
                 <svg class="marker-hand-svg help-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path class="marker-border-base" d="${helpPath}" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round" />
+                  <text x="12" y="14.6" text-anchor="middle" class="marker-help-text">?</text>
                 </svg>
               </div>
              </div>`,
@@ -339,7 +338,9 @@ function MapComponent({
         )}
         {createdRoom && markerIcon && (
           <Marker position={[createdRoom.lat, createdRoom.lng]} icon={markerIcon}>
-            <Popup className={`room-popup ${createdRoom.gender === 'Female' ? 'female' : 'male'}`}>
+            <Popup
+              className={`room-popup ${createdRoom.gender === 'Female' ? 'female' : 'male'}${createdRoom.messageType === 'Help' ? ' help' : ''}`}
+            >
               <div className="map-room-popup">
                 <div className="map-room-popup-header">
                   <div className="map-room-popup-username">{createdRoom.username || 'You'}</div>
@@ -435,7 +436,9 @@ function MapComponent({
                 </div>
               </Popup>
             ) : (
-              <Popup className={`room-popup ${room.gender === 'Female' ? 'female' : 'male'}`}>
+              <Popup
+                className={`room-popup ${room.gender === 'Female' ? 'female' : 'male'}${room.messageType === 'Help' ? ' help' : ''}`}
+              >
                 <div className="map-room-popup">
                   <div className="map-room-popup-header">
                     <div className="map-room-popup-username">{room.username}</div>
