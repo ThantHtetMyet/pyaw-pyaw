@@ -1196,7 +1196,7 @@ code {
 
 .room-header {
   position: fixed;
-  top: 0;
+  top: var(--visual-viewport-top, 0px);
   z-index: 1100;
   width: 100%;
   display: flex;
@@ -1368,7 +1368,7 @@ code {
   font-weight: 700;
   padding: 8px 12px;
   position: fixed;
-  top: 16px;
+  top: calc(16px + var(--visual-viewport-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 1205;
@@ -1479,12 +1479,41 @@ code {
   background: transparent;
   min-height: 0;
   max-height: none;
-  overflow: auto;
-  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 12px 6px 6px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(206, 218, 255, 0.78) rgba(255, 255, 255, 0.12);
+  scrollbar-gutter: stable both-edges;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(232, 238, 255, 0.9), rgba(176, 196, 255, 0.9));
+  border: 2px solid rgba(20, 24, 36, 0.45);
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(245, 248, 255, 0.96), rgba(198, 213, 255, 0.94));
+}
+
+.chat-messages::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .chat-empty {
@@ -1603,6 +1632,8 @@ code {
 .chat-input-row {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 .chat-input {
@@ -1620,10 +1651,20 @@ code {
   border-radius: 10px;
   background: linear-gradient(135deg, rgba(122, 107, 255, 0.8), rgba(56, 168, 255, 0.72));
   color: #ffffff;
-  font: inherit;
-  font-weight: 600;
-  padding: 10px 14px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-send-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
 }
 
 .chat-send-button:disabled,
@@ -1684,7 +1725,7 @@ code {
   }
 
   .chat-input-row {
-    flex-direction: column;
+    flex-direction: row;
   }
 }
 

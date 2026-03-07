@@ -304,24 +304,28 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     const viewport = window.visualViewport;
     if (!viewport) {
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      document.documentElement.style.setProperty('--visual-viewport-top', '0px');
       return () => {
         document.documentElement.style.setProperty('--keyboard-inset', '0px');
+        document.documentElement.style.setProperty('--visual-viewport-top', '0px');
       };
     }
 
-    const updateKeyboardInset = () => {
+    const updateViewportOffsets = () => {
       const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
       document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
+      document.documentElement.style.setProperty('--visual-viewport-top', `${Math.round(Math.max(0, viewport.offsetTop))}px`);
     };
 
-    updateKeyboardInset();
-    viewport.addEventListener('resize', updateKeyboardInset);
-    viewport.addEventListener('scroll', updateKeyboardInset);
+    updateViewportOffsets();
+    viewport.addEventListener('resize', updateViewportOffsets);
+    viewport.addEventListener('scroll', updateViewportOffsets);
 
     return () => {
-      viewport.removeEventListener('resize', updateKeyboardInset);
-      viewport.removeEventListener('scroll', updateKeyboardInset);
+      viewport.removeEventListener('resize', updateViewportOffsets);
+      viewport.removeEventListener('scroll', updateViewportOffsets);
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      document.documentElement.style.setProperty('--visual-viewport-top', '0px');
     };
   }, []);
 
@@ -921,8 +925,16 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               placeholder="Type a message..."
               disabled={isChatLocked}
             />
-            <button type="button" className="chat-send-button" onClick={handleSendMessage} disabled={isChatLocked}>
-              Send
+            <button
+              type="button"
+              className="chat-send-button"
+              onClick={handleSendMessage}
+              disabled={isChatLocked}
+              aria-label="Send message"
+            >
+              <svg viewBox="0 0 24 24" className="chat-send-icon" aria-hidden="true">
+                <path d="M3.4 11.4 19.8 4.4c.9-.4 1.8.5 1.5 1.4l-3.8 13.7c-.3 1-1.6 1.2-2.2.4l-3.2-4-3.9 3.4c-.5.4-1.2.1-1.3-.6l-.8-5.1-2.8-1.1c-.9-.3-1-.9-.1-1.3Z" />
+              </svg>
             </button>
           </div>
         </div>
