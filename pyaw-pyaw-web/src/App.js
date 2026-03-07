@@ -84,6 +84,8 @@ function buildHostIdPayload(hostId, roomData) {
     gender: roomData?.gender === 'Female' ? 'Female' : 'Male',
     username: roomData?.username || '',
     messageType: roomData?.messageType || 'Hi',
+    countryCode: normalizeCountryCode(roomData?.countryCode),
+    countryName: typeof roomData?.countryName === 'string' ? roomData.countryName.trim() : '',
   };
   if (!Number.isFinite(metadata.lat) || !Number.isFinite(metadata.lng)) {
     return hostId;
@@ -115,6 +117,8 @@ function readHostIdPayload(hostId) {
       gender: parsed.gender === 'Female' ? 'Female' : 'Male',
       username: typeof parsed.username === 'string' ? parsed.username : '',
       messageType: parsed.messageType || 'Hi',
+      countryCode: normalizeCountryCode(parsed.countryCode),
+      countryName: typeof parsed.countryName === 'string' ? parsed.countryName.trim() : '',
     };
   } catch (error) {
     return null;
@@ -171,11 +175,61 @@ function writeHiddenTopics(topics) {
   window.localStorage.setItem(HIDDEN_TOPICS_KEY, JSON.stringify(Array.from(topics)));
 }
 
-function getCountryFlagSource(countryCode) {
-  if (!countryCode || countryCode.length !== 2) {
+function normalizeCountryCode(countryCode) {
+  if (typeof countryCode !== 'string') {
     return '';
   }
-  return `https://flagcdn.com/24x18/${countryCode.toLowerCase()}.png`;
+  const normalized = countryCode.trim().toUpperCase();
+  return normalized.length === 2 ? normalized : '';
+}
+
+function getCountryName(countryCode) {
+  const normalizedCode = normalizeCountryCode(countryCode);
+  if (!normalizedCode) {
+    return '';
+  }
+  try {
+    const formatter = new Intl.DisplayNames(['en'], { type: 'region' });
+    return formatter.of(normalizedCode) || normalizedCode;
+  } catch {
+    return normalizedCode;
+  }
+}
+
+function getCountryFlagSource(countryCode) {
+  const normalizedCode = normalizeCountryCode(countryCode);
+  if (!normalizedCode) {
+    return '';
+  }
+  return `https://flagcdn.com/24x18/${normalizedCode.toLowerCase()}.png`;
+}
+
+async function resolveCountryByCoordinates(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { countryCode: '', countryName: '' };
+  }
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=3&addressdetails=1`,
+      {
+        headers: {
+          'Accept-Language': 'en',
+        },
+      }
+    );
+    if (!response.ok) {
+      return { countryCode: '', countryName: '' };
+    }
+    const data = await response.json();
+    const countryCode = normalizeCountryCode(data?.address?.country_code);
+    const countryName = typeof data?.address?.country === 'string' ? data.address.country.trim() : '';
+    return {
+      countryCode,
+      countryName: countryName || getCountryName(countryCode),
+    };
+  } catch {
+    return { countryCode: '', countryName: '' };
+  }
 }
 
 function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
@@ -735,12 +789,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     : isHostRole
       ? 'Host'
       : 'Client';
-  const hostName = isHostRole ? displayName : peerName || 'Host';
-  const clientName = isHostRole ? peerName || 'Client' : displayName;
-  const hostFlagSource = getCountryFlagSource(isHostRole ? selfCountry : peerCountry);
-  const clientFlagSource = getCountryFlagSource(isHostRole ? peerCountry : selfCountry);
-  const showHostCard = true;
-  const showClientCard = !isHostRole || isPeerJoined;
+  const senderName = displayName;
+  const receiverName = peerName || (isHostRole ? 'Client' : 'Host');
+  const senderCountryCode = selfCountry;
+  const receiverCountryCode = peerCountry;
+  const senderFlagSource = getCountryFlagSource(senderCountryCode);
+  const receiverFlagSource = getCountryFlagSource(receiverCountryCode);
+  const senderCountryName = getCountryName(senderCountryCode) || 'Unknown country';
+  const receiverCountryName = getCountryName(receiverCountryCode) || 'Unknown country';
+  const showReceiverCard = !isHostRole || isPeerJoined;
 
   return (
     <div className="room-tab-page">
@@ -762,26 +819,32 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           </button>
         </div>
         <div className="room-user-row">
-          {showClientCard && (
+          {showReceiverCard && (
             <div className="room-user-card left">
-              {clientFlagSource ? (
-                <img className="room-user-flag-img" src={clientFlagSource} alt="Client flag" />
+              <div className="room-user-flag-stack">
+                {receiverFlagSource ? (
+                  <img className="room-user-flag-img" src={receiverFlagSource} alt="Receiver flag" />
+                ) : (
+                  <span className="room-user-flag">🏳️</span>
+                )}
+                <span className="room-user-country">{receiverCountryName}</span>
+              </div>
+              <span className="room-user-divider" aria-hidden="true" />
+              <span className="room-user-name">{receiverName}</span>
+            </div>
+          )}
+          <div className="room-user-card right">
+            <div className="room-user-flag-stack">
+              {senderFlagSource ? (
+                <img className="room-user-flag-img" src={senderFlagSource} alt="Sender flag" />
               ) : (
                 <span className="room-user-flag">🏳️</span>
               )}
-              <span className="room-user-name">{clientName}</span>
+              <span className="room-user-country">{senderCountryName}</span>
             </div>
-          )}
-          {showHostCard && (
-            <div className="room-user-card right">
-              {hostFlagSource ? (
-                <img className="room-user-flag-img" src={hostFlagSource} alt="Host flag" />
-              ) : (
-                <span className="room-user-flag">🏳️</span>
-              )}
-              <span className="room-user-name">{hostName}</span>
-            </div>
-          )}
+            <span className="room-user-divider" aria-hidden="true" />
+            <span className="room-user-name">{senderName}</span>
+          </div>
         </div>
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
@@ -925,12 +988,18 @@ function App() {
 
   const handleCreateRoom = async roomData => {
     try {
+      const countryDetails = await resolveCountryByCoordinates(roomData?.lat, roomData?.lng);
+      const enrichedRoomData = {
+        ...roomData,
+        countryCode: countryDetails.countryCode,
+        countryName: countryDetails.countryName,
+      };
       const hostId = getOrCreateClientId();
       const response = await requestJson('/api/rooms', {
         method: 'POST',
         body: JSON.stringify({
           message: roomData.message || '',
-          hostId: buildHostIdPayload(hostId, roomData),
+          hostId: buildHostIdPayload(hostId, enrichedRoomData),
         }),
       });
       const room = response?.room;
@@ -938,7 +1007,7 @@ function App() {
         throw new Error('Room creation failed.');
       }
       const expiresAt = parseExpiresAt(room.expiresAt);
-      setCreatedRoom({ ...roomData, topic: room.topic, sessionExpiresAt: expiresAt, availability: 'idle' });
+      setCreatedRoom({ ...enrichedRoomData, topic: room.topic, sessionExpiresAt: expiresAt, availability: 'idle' });
       setHostRoomTopic(room.topic);
       setHiddenTopics(prev => {
         if (!prev.has(room.topic)) {
@@ -977,6 +1046,8 @@ function App() {
             gender: metadata?.gender || 'Male',
             username: metadata?.username || 'Anonymous',
             messageType: metadata?.messageType || 'Hi',
+            countryCode: normalizeCountryCode(metadata?.countryCode),
+            countryName: metadata?.countryName || getCountryName(metadata?.countryCode),
             availability: room.lastGuestId ? 'busy' : 'idle',
           };
         })

@@ -628,6 +628,7 @@ code {
 .map-room-popup-header {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   margin-bottom: 2px;
 }
@@ -1248,6 +1249,13 @@ code {
   font-weight: 600;
 }
 
+.room-user-flag-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
 .room-user-card.right {
   margin-left: auto;
 }
@@ -1264,9 +1272,23 @@ code {
   object-fit: cover;
 }
 
+.room-user-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}
+
 .room-user-name {
   color: #ffffff;
   font-weight: 700;
+}
+
+.room-user-country {
+  color: rgba(228, 237, 255, 0.9);
+  font-size: 0.7rem;
+  line-height: 1;
+  font-weight: 600;
 }
 
 .room-join-notice {
