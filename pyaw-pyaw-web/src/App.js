@@ -246,11 +246,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [joinNotice, setJoinNotice] = useState('');
   const [peerName, setPeerName] = useState('');
   const [peerCountry, setPeerCountry] = useState('');
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const viewportBaseHeightRef = useRef(0);
   const joinNoticeTimerRef = useRef(null);
   const baseInputRef = useRef(null);
   const headerRef = useRef(null);
@@ -312,19 +315,32 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
 
   useEffect(() => {
     const viewport = window.visualViewport;
+    viewportBaseHeightRef.current = Math.max(
+      viewportBaseHeightRef.current,
+      window.innerHeight,
+      viewport?.height || 0
+    );
     if (!viewport) {
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
       document.documentElement.style.setProperty('--visual-viewport-top', '0px');
+      setIsKeyboardOpen(false);
       return () => {
         document.documentElement.style.setProperty('--keyboard-inset', '0px');
         document.documentElement.style.setProperty('--visual-viewport-top', '0px');
+        setIsKeyboardOpen(false);
       };
     }
 
     const updateViewportOffsets = () => {
-      const inset = Math.max(0, window.innerHeight - viewport.height);
-      document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
+      const viewportHeight = viewport.height + viewport.offsetTop;
+      if (viewportHeight > viewportBaseHeightRef.current) {
+        viewportBaseHeightRef.current = viewportHeight;
+      }
+      const rawInset = Math.max(0, viewportBaseHeightRef.current - viewportHeight);
+      const keyboardInset = rawInset > 110 ? rawInset : 0;
+      document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(keyboardInset)}px`);
       document.documentElement.style.setProperty('--visual-viewport-top', '0px');
+      setIsKeyboardOpen(keyboardInset > 0);
       if (showChatInterface) {
         window.requestAnimationFrame(() => scrollToBottom('auto'));
       }
@@ -337,6 +353,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       viewport.removeEventListener('resize', updateViewportOffsets);
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
       document.documentElement.style.setProperty('--visual-viewport-top', '0px');
+      setIsKeyboardOpen(false);
     };
   }, [showChatInterface]);
 
@@ -435,10 +452,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       const headerHeight = headerRef.current?.offsetHeight || 0;
       document.documentElement.style.setProperty('--room-header-height', `${headerHeight}px`);
     };
+    const resizeObserver = typeof ResizeObserver !== 'undefined' && headerRef.current
+      ? new ResizeObserver(() => updateHeaderHeight())
+      : null;
+    resizeObserver?.observe(headerRef.current);
     updateHeaderHeight();
     window.addEventListener('resize', updateHeaderHeight);
     viewport?.addEventListener('resize', updateHeaderHeight);
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', updateHeaderHeight);
       viewport?.removeEventListener('resize', updateHeaderHeight);
     };
@@ -831,9 +853,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const senderCountryName = getCountryName(senderCountryCode) || 'Unknown country';
   const receiverCountryName = getCountryName(receiverCountryCode) || 'Unknown country';
   const showReceiverCard = !isHostRole || isPeerJoined;
+  const isCompactMobileLayout = showChatInterface && (isKeyboardOpen || isInputFocused);
 
   return (
-    <div className="room-tab-page">
+    <div className={`room-tab-page ${isCompactMobileLayout ? 'keyboard-open' : ''}`}>
       {joinNotice && isHostRole && <div className="room-join-notice">{joinNotice}</div>}
       <div className="room-header" ref={headerRef}>
         <div className="room-header-row">
@@ -935,6 +958,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               className="chat-input"
               value={inputValue}
               onChange={event => setInputValue(event.target.value)}
+              onFocus={() => {
+                setIsInputFocused(true);
+                window.requestAnimationFrame(() => scrollToBottom('auto'));
+              }}
+              onBlur={() => setIsInputFocused(false)}
               onKeyDown={event => event.key === 'Enter' && handleSendMessage()}
               placeholder="Type a message..."
               disabled={isChatLocked}

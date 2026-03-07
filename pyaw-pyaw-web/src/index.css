@@ -1747,6 +1747,36 @@ code {
   .chat-input-row {
     flex-direction: row;
   }
+
+  .room-tab-page.keyboard-open {
+    padding: calc(6px + var(--room-header-height, 0px)) 8px calc(6px + var(--keyboard-inset, 0px));
+    --room-row-inline-padding: 12px;
+  }
+
+  .room-tab-page.keyboard-open .room-header-row {
+    padding: 8px 10px 6px;
+    gap: 6px;
+  }
+
+  .room-tab-page.keyboard-open .room-top-row {
+    gap: 10px;
+  }
+
+  .room-tab-page.keyboard-open .room-user-row {
+    display: none;
+  }
+
+  .room-tab-page.keyboard-open .room-body {
+    padding: 8px 10px 6px;
+  }
+
+  .room-tab-page.keyboard-open .room-footer {
+    padding: 8px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .room-tab-page.keyboard-open .chat-messages {
+    padding: 4px 10px 4px 4px;
+  }
 }
 
 .room-connected-text {
