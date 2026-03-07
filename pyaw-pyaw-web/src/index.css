@@ -1218,6 +1218,9 @@ code {
   flex-direction: column;
   gap: 10px;
   color: #ffffff;
+  background: linear-gradient(180deg, rgba(10, 14, 30, 0.98), rgba(9, 12, 25, 0.96));
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 22px rgba(4, 8, 20, 0.34);
   border-bottom: 1px solid var(--room-line-color);
 }
 
@@ -1489,6 +1492,7 @@ code {
   scrollbar-width: thin;
   scrollbar-color: rgba(206, 218, 255, 0.78) rgba(255, 255, 255, 0.12);
   scrollbar-gutter: stable both-edges;
+  scroll-padding-bottom: 14px;
 }
 
 .chat-messages::-webkit-scrollbar {

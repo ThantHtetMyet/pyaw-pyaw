@@ -275,8 +275,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     ]);
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
   };
 
   useEffect(() => {
@@ -315,6 +315,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
       document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
       document.documentElement.style.setProperty('--visual-viewport-top', `${Math.round(Math.max(0, viewport.offsetTop))}px`);
+      if (showChatInterface) {
+        window.requestAnimationFrame(() => scrollToBottom('auto'));
+      }
     };
 
     updateViewportOffsets();
@@ -327,7 +330,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
       document.documentElement.style.setProperty('--visual-viewport-top', '0px');
     };
-  }, []);
+  }, [showChatInterface]);
 
   const isWaiting = !isPeerJoined && !isExpired;
   const [selfCountry, setSelfCountry] = useState('');
@@ -419,14 +422,19 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   }, [isWaiting, isExpired, showChatInterface]);
 
   useEffect(() => {
+    const viewport = window.visualViewport;
     const updateHeaderHeight = () => {
       const headerHeight = headerRef.current?.offsetHeight || 0;
       document.documentElement.style.setProperty('--room-header-height', `${headerHeight}px`);
     };
     updateHeaderHeight();
     window.addEventListener('resize', updateHeaderHeight);
+    viewport?.addEventListener('resize', updateHeaderHeight);
+    viewport?.addEventListener('scroll', updateHeaderHeight);
     return () => {
       window.removeEventListener('resize', updateHeaderHeight);
+      viewport?.removeEventListener('resize', updateHeaderHeight);
+      viewport?.removeEventListener('scroll', updateHeaderHeight);
     };
   }, []);
 
