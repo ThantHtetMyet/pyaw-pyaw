@@ -932,24 +932,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               onClick={openComposeModal}
               disabled={isChatLocked}
             >
-              Type a message...
-            </button>
-            <button
-              type="button"
-              className="chat-send-button"
-              onClick={() => {
-                if (handleSendMessage()) {
-                  setIsComposeModalOpen(false);
-                } else {
-                  openComposeModal();
-                }
-              }}
-              disabled={isChatLocked}
-              aria-label="Send message"
-            >
-              <svg viewBox="0 0 24 24" className="chat-send-icon" aria-hidden="true">
-                <path d="M3.4 11.4 19.8 4.4c.9-.4 1.8.5 1.5 1.4l-3.8 13.7c-.3 1-1.6 1.2-2.2.4l-3.2-4-3.9 3.4c-.5.4-1.2.1-1.3-.6l-.8-5.1-2.8-1.1c-.9-.3-1-.9-.1-1.3Z" />
-              </svg>
+              <span className="compose-placeholder-text">Type a message...</span>
             </button>
           </div>
         </div>
