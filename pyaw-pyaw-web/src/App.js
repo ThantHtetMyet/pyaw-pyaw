@@ -258,9 +258,36 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const joinNoticeTimerRef = useRef(null);
   const headerRef = useRef(null);
   const hasHandledKickoutRef = useRef(false);
+  const hasConfirmedGuestOwnershipRef = useRef(false);
+  const guestMismatchCountRef = useRef(0);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
+
+  const notifyMapAndClose = useCallback(payload => {
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(
+          {
+            type: 'pyaw-pyaw-room-exit',
+            ...payload,
+          },
+          window.location.origin
+        );
+      }
+    } catch {
+    }
+    if (window.opener && !window.opener.closed) {
+      window.close();
+      window.setTimeout(() => {
+        if (!window.closed) {
+          window.location.href = window.location.pathname;
+        }
+      }, 120);
+      return;
+    }
+    window.location.href = window.location.pathname;
+  }, []);
 
   const addMessage = (sender, text, options = {}) => {
     if (!text) {
@@ -637,7 +664,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, sessionExpiresAt, username, isHostRole, selfCountry, updatePeerInfo, onExit]);
+  }, [topic, role, sessionExpiresAt, username, isHostRole, selfCountry, updatePeerInfo, onExit, notifyMapAndClose]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -813,36 +840,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     });
   };
 
-  const notifyMapAndClose = useCallback(payload => {
-    try {
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(
-          {
-            type: 'pyaw-pyaw-room-exit',
-            ...payload,
-          },
-          window.location.origin
-        );
-      }
-    } catch {
-    }
-    if (window.opener && !window.opener.closed) {
-      window.close();
-      window.setTimeout(() => {
-        if (!window.closed) {
-          window.location.href = window.location.pathname;
-        }
-      }, 120);
-      return;
-    }
-    window.location.href = window.location.pathname;
-  }, []);
-
   useEffect(() => {
     if (isHostRole) {
       return undefined;
     }
     let cancelled = false;
+    const guestId = clientIdRef.current;
     const checkGuestStillAllowed = async () => {
       if (hasHandledKickoutRef.current) {
         return;
@@ -853,17 +856,27 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           return;
         }
         const room = (response?.rooms || []).find(item => item?.topic === topic);
-        const isRoomBusy = room?.availability === 'busy';
-        if (!isRoomBusy) {
-          hasHandledKickoutRef.current = true;
-          setIsComposeModalOpen(false);
-          setInputValue('');
-          const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, kickedOut: true };
-          if (typeof onExit === 'function') {
-            onExit(exitPayload);
-          } else {
-            notifyMapAndClose(exitPayload);
-          }
+        const activeGuestId = typeof room?.lastGuestId === 'string' ? room.lastGuestId : '';
+        if (activeGuestId && activeGuestId === guestId) {
+          hasConfirmedGuestOwnershipRef.current = true;
+          guestMismatchCountRef.current = 0;
+          return;
+        }
+        if (!hasConfirmedGuestOwnershipRef.current) {
+          return;
+        }
+        guestMismatchCountRef.current += 1;
+        if (guestMismatchCountRef.current < 2) {
+          return;
+        }
+        hasHandledKickoutRef.current = true;
+        setIsComposeModalOpen(false);
+        setInputValue('');
+        const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, kickedOut: true };
+        if (typeof onExit === 'function') {
+          onExit(exitPayload);
+        } else {
+          notifyMapAndClose(exitPayload);
         }
       } catch {
       }
