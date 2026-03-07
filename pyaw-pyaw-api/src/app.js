@@ -117,6 +117,28 @@ export const createApp = () => {
     }
   });
 
+  const handleKickToIdle = async (req, res) => {
+    try {
+      const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';
+      if (!topic) {
+        res.status(400).json({ message: 'topic is required' });
+        return;
+      }
+      await markRoomLeft({ topic });
+      publishRoomEvent({
+        type: 'availability',
+        topic,
+        availability: 'idle',
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  };
+
+  app.post('/api/rooms/kick', handleKickToIdle);
+  app.post('/api/rooms/kickout', handleKickToIdle);
+
   app.post('/api/rooms/terminate', async (req, res) => {
     try {
       const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';

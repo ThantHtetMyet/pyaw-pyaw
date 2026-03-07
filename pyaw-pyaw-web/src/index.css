@@ -1689,6 +1689,24 @@ code {
   animation: none;
 }
 
+.chat-kickout-button {
+  flex: 0 0 auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 132, 160, 0.62);
+  background: rgba(72, 19, 35, 0.65);
+  color: #ffd4df;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-kickout-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .room-compose-overlay {
   position: fixed;
   inset: 0;
@@ -1711,6 +1729,46 @@ code {
   flex-direction: column;
   gap: 10px;
   padding: 14px;
+}
+
+.room-confirm-modal {
+  width: min(400px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 153, 178, 0.58);
+  background: linear-gradient(160deg, rgba(78, 22, 42, 0.95), rgba(42, 10, 23, 0.97));
+  box-shadow: 0 24px 56px rgba(40, 6, 19, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.room-confirm-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgba(255, 232, 239, 0.96);
+}
+
+.room-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.room-confirm-no,
+.room-confirm-yes {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 196, 212, 0.56);
+  background: rgba(66, 16, 35, 0.6);
+  color: #ffe8ef;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.room-confirm-yes {
+  background: linear-gradient(135deg, rgba(196, 57, 98, 0.86), rgba(165, 38, 76, 0.78));
 }
 
 .room-compose-header {

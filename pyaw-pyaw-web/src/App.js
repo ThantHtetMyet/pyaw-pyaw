@@ -238,6 +238,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const [showChatInterface, setShowChatInterface] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
+  const [isKickoutModalOpen, setIsKickoutModalOpen] = useState(false);
+  const [isKickingOut, setIsKickingOut] = useState(false);
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
   const [isRoomKilled, setIsRoomKilled] = useState(false);
@@ -255,6 +257,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const composeTextareaRef = useRef(null);
   const joinNoticeTimerRef = useRef(null);
   const headerRef = useRef(null);
+  const hasHandledKickoutRef = useRef(false);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -587,6 +590,23 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
               addMessage('System', payload?.text || 'Host ended this chat.', { type: 'system' });
               return;
             }
+            if (payload?.type === 'kickout') {
+              if (!isHostRole) {
+                if (hasHandledKickoutRef.current) {
+                  return;
+                }
+                hasHandledKickoutRef.current = true;
+                setIsComposeModalOpen(false);
+                setInputValue('');
+                const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, kickedOut: true };
+                if (typeof onExit === 'function') {
+                  onExit(exitPayload);
+                } else {
+                  notifyMapAndClose(exitPayload);
+                }
+              }
+              return;
+            }
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
             setIsPeerJoined(true);
             setShowChatInterface(true);
@@ -617,7 +637,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, sessionExpiresAt, username, isHostRole, selfCountry, updatePeerInfo]);
+  }, [topic, role, sessionExpiresAt, username, isHostRole, selfCountry, updatePeerInfo, onExit]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -663,6 +683,80 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     } catch {
     }
   }, [isHostRole, topic]);
+
+  const requestKickoutApi = useCallback(async () => {
+    const payload = {
+      method: 'POST',
+      body: JSON.stringify({ topic }),
+    };
+    try {
+      await requestJson('/api/rooms/kick', payload);
+      return;
+    } catch (error) {
+      const errorMessage = typeof error?.message === 'string' ? error.message : '';
+      if (!errorMessage.includes('404')) {
+        throw error;
+      }
+    }
+    await requestJson('/api/rooms/kickout', payload);
+  }, [topic]);
+
+  const publishRoomPayload = useCallback(
+    (publishTopic, payloadText) =>
+      new Promise(resolve => {
+        const client = mqttClientRef.current;
+        if (!client?.connected) {
+          resolve();
+          return;
+        }
+        let settled = false;
+        const finish = () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          resolve();
+        };
+        client.publish(publishTopic, payloadText, finish);
+        window.setTimeout(finish, 350);
+      }),
+    []
+  );
+
+  const handleKickoutConfirm = useCallback(async () => {
+    if (!isHostRole || isKickingOut) {
+      return;
+    }
+    setIsKickingOut(true);
+    try {
+      await publishRoomPayload(
+        `${topic}/chat`,
+        JSON.stringify({
+          type: 'kickout',
+          senderId: clientIdRef.current,
+          senderRole: role,
+          senderName: username,
+          senderCountry: selfCountry,
+          text: 'Host kicked out the client.',
+        })
+      );
+      await requestKickoutApi();
+      setIsPeerJoined(false);
+      hasSeenPeerRef.current = false;
+      setShowChatInterface(false);
+      setMessages([]);
+      setInputValue('');
+      setJoinNotice('');
+      setPeerName('');
+      setPeerCountry('');
+      setIsComposeModalOpen(false);
+    } catch (error) {
+      setTransportError(error.message || 'Unable to kick out client.');
+    } finally {
+      setIsKickoutModalOpen(false);
+      setIsKickingOut(false);
+    }
+  }, [isHostRole, isKickingOut, publishRoomPayload, requestKickoutApi, role, selfCountry, topic, username]);
 
   useEffect(() => {
     if (isHostRole) {
@@ -719,7 +813,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     });
   };
 
-  const notifyMapAndClose = payload => {
+  const notifyMapAndClose = useCallback(payload => {
     try {
       if (window.opener && !window.opener.closed) {
         window.opener.postMessage(
@@ -742,31 +836,51 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       return;
     }
     window.location.href = window.location.pathname;
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isHostRole) {
+      return undefined;
+    }
+    let cancelled = false;
+    const checkGuestStillAllowed = async () => {
+      if (hasHandledKickoutRef.current) {
+        return;
+      }
+      try {
+        const response = await requestJson('/api/rooms/active');
+        if (cancelled) {
+          return;
+        }
+        const room = (response?.rooms || []).find(item => item?.topic === topic);
+        const isRoomBusy = room?.availability === 'busy';
+        if (!isRoomBusy) {
+          hasHandledKickoutRef.current = true;
+          setIsComposeModalOpen(false);
+          setInputValue('');
+          const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, kickedOut: true };
+          if (typeof onExit === 'function') {
+            onExit(exitPayload);
+          } else {
+            notifyMapAndClose(exitPayload);
+          }
+        }
+      } catch {
+      }
+    };
+    checkGuestStillAllowed();
+    const timer = window.setInterval(checkGuestStillAllowed, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isHostRole, notifyMapAndClose, onExit, topic]);
 
   const handleExitChat = async () => {
     const isHost = isHostRole;
-    const publishBeforeExit = (publishTopic, payloadText) =>
-      new Promise(resolve => {
-        const client = mqttClientRef.current;
-        if (!client?.connected) {
-          resolve();
-          return;
-        }
-        let settled = false;
-        const finish = () => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          resolve();
-        };
-        client.publish(publishTopic, payloadText, finish);
-        window.setTimeout(finish, 350);
-      });
 
     if (isHost) {
-      await publishBeforeExit(
+      await publishRoomPayload(
         `${topic}/chat`,
         JSON.stringify({
           type: 'kill',
@@ -778,7 +892,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
         })
       );
     } else {
-      await publishBeforeExit(
+      await publishRoomPayload(
         `${topic}/presence`,
         JSON.stringify({
           type: 'leave',
@@ -827,6 +941,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const senderCountryName = getCountryName(senderCountryCode) || 'Unknown country';
   const receiverCountryName = getCountryName(receiverCountryCode) || 'Unknown country';
   const showReceiverCard = !isHostRole || isPeerJoined;
+  const kickoutTargetName = peerName || receiverName || 'Client';
 
   return (
     <div className="room-tab-page">
@@ -934,6 +1049,16 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
             >
               <span className="compose-placeholder-text">Type a message...</span>
             </button>
+            {isHostRole && (
+              <button
+                type="button"
+                className="chat-kickout-button"
+                onClick={() => setIsKickoutModalOpen(true)}
+                disabled={isChatLocked || isWaiting || isKickingOut}
+              >
+                Kickout
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -978,6 +1103,31 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
                 disabled={isChatLocked}
               >
                 Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showChatInterface && isKickoutModalOpen && (
+        <div className="room-compose-overlay" onClick={() => setIsKickoutModalOpen(false)}>
+          <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
+            <div className="room-confirm-title">Kick out {kickoutTargetName}?</div>
+            <div className="room-confirm-actions">
+              <button
+                type="button"
+                className="room-confirm-no"
+                onClick={() => setIsKickoutModalOpen(false)}
+                disabled={isKickingOut}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="room-confirm-yes"
+                onClick={handleKickoutConfirm}
+                disabled={isKickingOut}
+              >
+                {isKickingOut ? 'Kicking...' : 'Yes'}
               </button>
             </div>
           </div>
@@ -1243,6 +1393,9 @@ function App() {
   const handleExitChatRoom = useCallback(
     payload => {
       setActiveChatRoom(null);
+      if (payload?.kickedOut) {
+        setModalMessage('You were kicked out by host.');
+      }
       if (payload?.terminatedByHost) {
         hideRoomTopic(payload?.topic);
         setCreatedRoom(prev => (prev?.topic === payload?.topic ? null : prev));
@@ -1281,6 +1434,9 @@ function App() {
         return;
       }
       setCreatedRoom(null);
+      if (event.data?.kickedOut) {
+        setModalMessage('You were kicked out by host.');
+      }
       if (event.data?.terminatedByHost) {
         hideRoomTopic(event.data?.topic);
         setHostRoomTopic('');
