@@ -1679,6 +1679,50 @@ code {
   animation: messageInOut 2.8s ease-in-out forwards;
 }
 
+.room-video-panel {
+  margin-bottom: 10px;
+}
+
+.room-video-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.room-video-tile {
+  border-radius: 12px;
+  border: 1px solid rgba(154, 197, 255, 0.45);
+  background: rgba(6, 13, 34, 0.78);
+  overflow: hidden;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+.room-video-name {
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  color: rgba(220, 233, 255, 0.92);
+  border-bottom: 1px solid rgba(154, 197, 255, 0.25);
+}
+
+.room-video-element {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  background: rgba(2, 6, 18, 0.9);
+}
+
+.room-video-placeholder {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: rgba(195, 215, 255, 0.85);
+  font-size: 0.86rem;
+  text-align: center;
+  padding: 10px;
+}
+
 .chat-input-row {
   display: flex;
   gap: 8px;
@@ -1731,6 +1775,36 @@ code {
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
+}
+
+.chat-video-button {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(122, 205, 255, 0.62);
+  background: linear-gradient(145deg, rgba(12, 37, 84, 0.7), rgba(5, 17, 43, 0.82));
+  color: #dcf6ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.chat-video-button.active {
+  border-color: rgba(130, 255, 210, 0.7);
+  background: linear-gradient(145deg, rgba(18, 88, 78, 0.78), rgba(10, 52, 44, 0.86));
+}
+
+.chat-video-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chat-video-icon {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
 }
 
 .chat-kickout-button:disabled {

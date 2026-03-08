@@ -11,6 +11,7 @@ const MIN_SCAN_VISIBILITY_MS = 5 * 1000;
 const ROOM_ACTIVITY_EVENT_KEY = 'pyaw-pyaw-room-activity-event';
 const HIDDEN_TOPICS_KEY = 'pyaw-pyaw-hidden-topics';
 const KICKED_TOPICS_KEY = 'pyaw-pyaw-kicked-topics';
+const VIDEO_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 function normalizeBaseUrl(urlText) {
   return (urlText || '').trim().replace(/\/+$/, '');
@@ -217,6 +218,15 @@ function getCountryName(countryCode) {
   }
 }
 
+function stopMediaTracks(stream) {
+  if (!stream) {
+    return;
+  }
+  stream.getTracks().forEach(track => {
+    track.stop();
+  });
+}
+
 function getCountryFlagSource(countryCode) {
   const normalizedCode = normalizeCountryCode(countryCode);
   if (!normalizedCode) {
@@ -273,6 +283,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const [joinNotice, setJoinNotice] = useState('');
   const [peerName, setPeerName] = useState('');
   const [peerCountry, setPeerCountry] = useState('');
+  const [selfCountry, setSelfCountry] = useState('');
+  const [isVideoRequestModalOpen, setIsVideoRequestModalOpen] = useState(false);
+  const [videoRequestSenderRole, setVideoRequestSenderRole] = useState('guest');
+  const [videoRequestSenderName, setVideoRequestSenderName] = useState('');
+  const [isVideoRequestPending, setIsVideoRequestPending] = useState(false);
+  const [isVideoCallActive, setIsVideoCallActive] = useState(false);
+  const [localMediaStream, setLocalMediaStream] = useState(null);
+  const [remoteMediaStream, setRemoteMediaStream] = useState(null);
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
   const hasSeenPeerRef = useRef(false);
@@ -288,6 +306,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const promptedExpiresAtRef = useRef(0);
   const hasHandledExpiredExitRef = useRef(false);
   const expireExitTimerRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -357,6 +380,186 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     ]);
   };
 
+  const publishVideoSignal = useCallback(
+    payload => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      const client = mqttClientRef.current;
+      if (!client?.connected) {
+        return;
+      }
+      client.publish(
+        `${topic}/chat`,
+        JSON.stringify({
+          senderId: clientIdRef.current,
+          senderRole: role,
+          senderName: username,
+          senderCountry: selfCountry,
+          ...payload,
+        })
+      );
+    },
+    [role, selfCountry, topic, username]
+  );
+
+  const closePeerConnection = useCallback(() => {
+    const peerConnection = peerConnectionRef.current;
+    if (!peerConnection) {
+      return;
+    }
+    peerConnection.onicecandidate = null;
+    peerConnection.ontrack = null;
+    peerConnection.onconnectionstatechange = null;
+    peerConnection.close();
+    peerConnectionRef.current = null;
+  }, []);
+
+  const resetVideoCallState = useCallback(() => {
+    closePeerConnection();
+    stopMediaTracks(localStreamRef.current);
+    stopMediaTracks(remoteStreamRef.current);
+    localStreamRef.current = null;
+    remoteStreamRef.current = null;
+    setLocalMediaStream(null);
+    setRemoteMediaStream(null);
+    setIsVideoCallActive(false);
+    setIsVideoRequestPending(false);
+    setIsVideoRequestModalOpen(false);
+  }, [closePeerConnection]);
+
+  const handleEndVideoCall = useCallback(
+    shouldNotifyPeer => {
+      if (shouldNotifyPeer) {
+        publishVideoSignal({ type: 'video-end' });
+      }
+      resetVideoCallState();
+    },
+    [publishVideoSignal, resetVideoCallState]
+  );
+
+  const ensureLocalMediaStream = useCallback(async () => {
+    if (localStreamRef.current) {
+      return localStreamRef.current;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Video call is not supported in this browser.');
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localStreamRef.current = stream;
+    setLocalMediaStream(stream);
+    return stream;
+  }, []);
+
+  const ensurePeerConnection = useCallback(async () => {
+    if (peerConnectionRef.current) {
+      return peerConnectionRef.current;
+    }
+    const peerConnection = new RTCPeerConnection({ iceServers: VIDEO_ICE_SERVERS });
+    peerConnection.onicecandidate = event => {
+      if (!event.candidate) {
+        return;
+      }
+      publishVideoSignal({
+        type: 'webrtc-ice',
+        candidate: event.candidate,
+      });
+    };
+    peerConnection.ontrack = event => {
+      const [stream] = event.streams || [];
+      if (!stream) {
+        return;
+      }
+      remoteStreamRef.current = stream;
+      setRemoteMediaStream(stream);
+    };
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        resetVideoCallState();
+      }
+    };
+    const stream = await ensureLocalMediaStream();
+    stream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, stream);
+    });
+    peerConnectionRef.current = peerConnection;
+    return peerConnection;
+  }, [ensureLocalMediaStream, publishVideoSignal, resetVideoCallState]);
+
+  const handleStartVideoOffer = useCallback(async () => {
+    try {
+      setTransportError('');
+      setIsVideoCallActive(true);
+      const peerConnection = await ensurePeerConnection();
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      publishVideoSignal({
+        type: 'webrtc-offer',
+        sdp: offer,
+      });
+      addMessage('System', 'Video call started.', { type: 'system' });
+    } catch (error) {
+      resetVideoCallState();
+      setTransportError(error.message || 'Unable to start video call.');
+    }
+  }, [ensurePeerConnection, publishVideoSignal, resetVideoCallState]);
+
+  const handleIncomingVideoOffer = useCallback(
+    async payload => {
+      if (!payload?.sdp) {
+        return;
+      }
+      try {
+        setTransportError('');
+        setIsVideoCallActive(true);
+        const peerConnection = await ensurePeerConnection();
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        publishVideoSignal({
+          type: 'webrtc-answer',
+          sdp: answer,
+        });
+      } catch (error) {
+        resetVideoCallState();
+        setTransportError(error.message || 'Unable to connect video call.');
+      }
+    },
+    [ensurePeerConnection, publishVideoSignal, resetVideoCallState]
+  );
+
+  const handleIncomingVideoAnswer = useCallback(
+    async payload => {
+      if (!payload?.sdp) {
+        return;
+      }
+      const peerConnection = peerConnectionRef.current;
+      if (!peerConnection) {
+        return;
+      }
+      try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      } catch (error) {
+        resetVideoCallState();
+        setTransportError(error.message || 'Unable to finalize video call.');
+      }
+    },
+    [resetVideoCallState]
+  );
+
+  const handleIncomingVideoIceCandidate = useCallback(async payload => {
+    const candidate = payload?.candidate;
+    const peerConnection = peerConnectionRef.current;
+    if (!candidate || !peerConnection) {
+      return;
+    }
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch {
+    }
+  }, []);
+
   const scrollToBottom = (behavior = 'smooth') => {
     const messagesContainer = messagesContainerRef.current;
     if (messagesContainer) {
@@ -402,6 +605,27 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     },
     []
   );
+
+  useEffect(
+    () => () => {
+      resetVideoCallState();
+    },
+    [resetVideoCallState]
+  );
+
+  useEffect(() => {
+    if (!localVideoRef.current) {
+      return;
+    }
+    localVideoRef.current.srcObject = localMediaStream || null;
+  }, [localMediaStream]);
+
+  useEffect(() => {
+    if (!remoteVideoRef.current) {
+      return;
+    }
+    remoteVideoRef.current.srcObject = remoteMediaStream || null;
+  }, [remoteMediaStream]);
 
   useEffect(() => {
     if (!isComposeModalOpen) {
@@ -470,7 +694,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   );
 
   const isWaiting = !isPeerJoined && !isExpired;
-  const [selfCountry, setSelfCountry] = useState('');
   const updatePeerInfo = useCallback(
     payload => {
       const senderName = typeof payload?.senderName === 'string' ? payload.senderName.trim() : '';
@@ -695,6 +918,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           if (messageTopic.endsWith('/presence')) {
             const presenceType = payload?.type;
             if (presenceType === 'leave') {
+              resetVideoCallState();
               setIsPeerJoined(false);
               hasSeenPeerRef.current = false;
               setJoinNotice('');
@@ -740,6 +964,53 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           }
 
           if (messageTopic.endsWith('/chat')) {
+            if (payload?.type === 'video-request') {
+              if (isChatLocked || isVideoCallActive) {
+                publishVideoSignal({ type: 'video-reject' });
+                return;
+              }
+              setVideoRequestSenderRole(payload?.senderRole === 'host' ? 'host' : 'guest');
+              setVideoRequestSenderName(
+                typeof payload?.senderName === 'string' && payload.senderName.trim()
+                  ? payload.senderName.trim()
+                  : payload?.senderRole === 'host'
+                    ? 'Host'
+                    : 'Client'
+              );
+              setIsVideoRequestModalOpen(true);
+              return;
+            }
+            if (payload?.type === 'video-accept') {
+              if (!isVideoRequestPending) {
+                return;
+              }
+              setIsVideoRequestPending(false);
+              setIsVideoCallActive(true);
+              void handleStartVideoOffer();
+              return;
+            }
+            if (payload?.type === 'video-reject') {
+              setIsVideoRequestPending(false);
+              addMessage('System', `${payload?.senderName || 'Peer'} declined video call.`, { type: 'system' });
+              return;
+            }
+            if (payload?.type === 'video-end') {
+              resetVideoCallState();
+              addMessage('System', 'Video call ended.', { type: 'system' });
+              return;
+            }
+            if (payload?.type === 'webrtc-offer') {
+              void handleIncomingVideoOffer(payload);
+              return;
+            }
+            if (payload?.type === 'webrtc-answer') {
+              void handleIncomingVideoAnswer(payload);
+              return;
+            }
+            if (payload?.type === 'webrtc-ice') {
+              void handleIncomingVideoIceCandidate(payload);
+              return;
+            }
             if (payload?.type === 'kill') {
               if (!isHostRole) {
                 setIsComposeModalOpen(false);
@@ -753,6 +1024,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                 return;
               }
               setIsRoomKilled(true);
+              resetVideoCallState();
               setShowChatInterface(true);
               addMessage('System', payload?.text || 'Host ended this chat.', { type: 'system' });
               return;
@@ -772,6 +1044,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                   notifyMapAndClose(exitPayload);
                 }
               }
+              resetVideoCallState();
               return;
             }
             const text = typeof payload?.text === 'string' ? payload.text : payloadText;
@@ -804,7 +1077,26 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, username, isHostRole, selfCountry, updatePeerInfo, onExit, notifyMapAndClose, applySessionExpiryUpdate]);
+  }, [
+    applySessionExpiryUpdate,
+    handleIncomingVideoAnswer,
+    handleIncomingVideoIceCandidate,
+    handleIncomingVideoOffer,
+    handleStartVideoOffer,
+    isChatLocked,
+    isHostRole,
+    isVideoCallActive,
+    isVideoRequestPending,
+    notifyMapAndClose,
+    onExit,
+    publishVideoSignal,
+    resetVideoCallState,
+    role,
+    selfCountry,
+    topic,
+    updatePeerInfo,
+    username,
+  ]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -825,6 +1117,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           return;
         }
         if (payload?.availability === 'idle') {
+          resetVideoCallState();
           setIsPeerJoined(false);
           hasSeenPeerRef.current = false;
           setShowChatInterface(false);
@@ -840,7 +1133,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     return () => {
       eventSource.close();
     };
-  }, [applySessionExpiryUpdate, isHostRole, topic]);
+  }, [applySessionExpiryUpdate, isHostRole, resetVideoCallState, topic]);
 
   const notifyGuestLeaveApi = useCallback(async () => {
     if (isHostRole) {
@@ -1024,6 +1317,44 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     return true;
   };
 
+  const handleVideoButtonClick = () => {
+    if (isChatLocked || isWaiting) {
+      return;
+    }
+    if (isVideoCallActive) {
+      handleEndVideoCall(true);
+      addMessage('System', 'Video call ended.', { type: 'system' });
+      return;
+    }
+    if (isVideoRequestPending) {
+      return;
+    }
+    setIsVideoRequestPending(true);
+    publishVideoSignal({ type: 'video-request' });
+    addMessage('System', 'Video call request sent.', { type: 'system' });
+  };
+
+  const handleAcceptVideoRequest = async () => {
+    try {
+      setTransportError('');
+      setIsVideoRequestModalOpen(false);
+      setIsVideoCallActive(true);
+      await ensureLocalMediaStream();
+      publishVideoSignal({ type: 'video-accept' });
+      addMessage('System', 'Video request accepted.', { type: 'system' });
+    } catch (error) {
+      publishVideoSignal({ type: 'video-reject' });
+      resetVideoCallState();
+      setTransportError(error.message || 'Unable to access camera/microphone.');
+    }
+  };
+
+  const handleRejectVideoRequest = () => {
+    setIsVideoRequestModalOpen(false);
+    publishVideoSignal({ type: 'video-reject' });
+    addMessage('System', 'Video request rejected.', { type: 'system' });
+  };
+
   const openComposeModal = () => {
     setIsComposeModalOpen(true);
     window.requestAnimationFrame(() => {
@@ -1139,6 +1470,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       window.localStorage.removeItem('pyaw-pyaw-active-room');
       emitRoomActivityEvent({ type: 'terminated', topic });
     }
+    resetVideoCallState();
     mqttClientRef.current?.end(true);
     const exitPayload = { refreshRooms: true, terminatedByHost: isHost, topic, role };
     if (typeof onExit === 'function') {
@@ -1171,6 +1503,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const hostFlagSource = isHostRole ? senderFlagSource : receiverFlagSource;
   const clientFlagSource = isHostRole ? receiverFlagSource : senderFlagSource;
   const isClientJoined = !isHostRole || isPeerJoined;
+  const videoRequestRoleLabel = videoRequestSenderRole === 'host' ? 'Host' : 'Client';
+  const videoRequestLabel = videoRequestSenderName || videoRequestRoleLabel;
+  const isVideoButtonDisabled = isChatLocked || isWaiting || (!isVideoCallActive && !isPeerJoined);
+  const showVideoPanel = Boolean(localMediaStream || remoteMediaStream || isVideoCallActive);
 
   return (
     <div className="room-tab-page">
@@ -1262,19 +1598,43 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           </div>
         )}
         {showChatInterface && (
-          <div className="chat-messages" ref={messagesContainerRef}>
-            {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
-            {messages.map(message => (
-              <div
-                key={message.id}
-                className={`chat-message-item ${message.type === 'system' ? 'system' : message.isOwn ? 'own' : 'peer'}`}
-              >
-                <div className="chat-message-meta">{message.sender}</div>
-                <div className="chat-message-bubble">{message.text}</div>
+          <>
+            {showVideoPanel && (
+              <div className="room-video-panel">
+                <div className="room-video-grid">
+                  <div className="room-video-tile">
+                    <div className="room-video-name">{receiverName}</div>
+                    {remoteMediaStream ? (
+                      <video className="room-video-element" ref={remoteVideoRef} autoPlay playsInline />
+                    ) : (
+                      <div className="room-video-placeholder">Waiting for peer video...</div>
+                    )}
+                  </div>
+                  <div className="room-video-tile">
+                    <div className="room-video-name">{senderName}</div>
+                    {localMediaStream ? (
+                      <video className="room-video-element" ref={localVideoRef} autoPlay playsInline muted />
+                    ) : (
+                      <div className="room-video-placeholder">Waiting for camera...</div>
+                    )}
+                  </div>
+                </div>
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+            )}
+            <div className="chat-messages" ref={messagesContainerRef}>
+              {messages.length === 0 && <div className="chat-empty">No messages yet.</div>}
+              {messages.map(message => (
+                <div
+                  key={message.id}
+                  className={`chat-message-item ${message.type === 'system' ? 'system' : message.isOwn ? 'own' : 'peer'}`}
+                >
+                  <div className="chat-message-meta">{message.sender}</div>
+                  <div className="chat-message-bubble">{message.text}</div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          </>
         )}
       </div>
       {showChatInterface && (
@@ -1287,6 +1647,17 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
               disabled={isChatLocked}
             >
               <span className="compose-placeholder-text">Type a message...</span>
+            </button>
+            <button
+              type="button"
+              className={`chat-video-button ${isVideoCallActive ? 'active' : ''}`}
+              onClick={handleVideoButtonClick}
+              disabled={isVideoButtonDisabled}
+              aria-label={isVideoCallActive ? 'End video call' : 'Start video call'}
+            >
+              <svg viewBox="0 0 24 24" className="chat-video-icon" aria-hidden="true">
+                <path d="M15 7.5a2.5 2.5 0 0 0-2.5-2.5h-7A2.5 2.5 0 0 0 3 7.5v9A2.5 2.5 0 0 0 5.5 19h7a2.5 2.5 0 0 0 2.5-2.5V15l4.2 3a1 1 0 0 0 1.6-.8V6.8a1 1 0 0 0-1.6-.8L15 9z" />
+              </svg>
             </button>
             {isHostRole && (
               <button
@@ -1399,6 +1770,29 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                 disabled={isKickingOut}
               >
                 {isKickingOut ? 'Kicking...' : 'Yes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showChatInterface && isVideoRequestModalOpen && (
+        <div className="room-compose-overlay" onClick={handleRejectVideoRequest}>
+          <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
+            <div className="room-confirm-title">{videoRequestLabel} asks you to turn on video call.</div>
+            <div className="room-confirm-actions">
+              <button
+                type="button"
+                className="room-confirm-no"
+                onClick={handleRejectVideoRequest}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="room-confirm-yes"
+                onClick={handleAcceptVideoRequest}
+              >
+                Yes
               </button>
             </div>
           </div>
