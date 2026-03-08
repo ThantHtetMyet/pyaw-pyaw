@@ -609,25 +609,13 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
   }, []);
 
-  useEffect(() => {
-    videoSignalHandlersRef.current = {
-      publishVideoSignal,
-      clearVideoRequestTimer,
-      handleStartVideoOffer,
-      handleIncomingVideoOffer,
-      handleIncomingVideoAnswer,
-      handleIncomingVideoIceCandidate,
-      resetVideoCallState,
-    };
-  }, [
-    clearVideoRequestTimer,
-    handleIncomingVideoAnswer,
-    handleIncomingVideoIceCandidate,
-    handleIncomingVideoOffer,
-    handleStartVideoOffer,
-    publishVideoSignal,
-    resetVideoCallState,
-  ]);
+  videoSignalHandlersRef.current.publishVideoSignal = publishVideoSignal;
+  videoSignalHandlersRef.current.clearVideoRequestTimer = clearVideoRequestTimer;
+  videoSignalHandlersRef.current.handleStartVideoOffer = handleStartVideoOffer;
+  videoSignalHandlersRef.current.handleIncomingVideoOffer = handleIncomingVideoOffer;
+  videoSignalHandlersRef.current.handleIncomingVideoAnswer = handleIncomingVideoAnswer;
+  videoSignalHandlersRef.current.handleIncomingVideoIceCandidate = handleIncomingVideoIceCandidate;
+  videoSignalHandlersRef.current.resetVideoCallState = resetVideoCallState;
 
   const scrollToBottom = (behavior = 'smooth') => {
     const messagesContainer = messagesContainerRef.current;
