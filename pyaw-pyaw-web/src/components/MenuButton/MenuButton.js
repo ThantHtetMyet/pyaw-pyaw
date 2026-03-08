@@ -254,8 +254,8 @@ function MenuButton({ onCreateRoom, onSearchRooms, onLocate, onResumeRoom, mapTh
         )}
       </div>
       {isCreateModalOpen && (
-        <div className="glass-modal-backdrop" onClick={handleCloseModal}>
-          <div className="glass-modal" onClick={event => event.stopPropagation()}>
+        <div className="glass-modal-backdrop create-room-backdrop" onClick={handleCloseModal}>
+          <div className="glass-modal create-room-modal" onClick={event => event.stopPropagation()}>
             <div className="modal-header-row">
               <h3 className="modal-title">Create Chat-Room</h3>
             </div>

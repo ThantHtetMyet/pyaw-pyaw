@@ -461,27 +461,16 @@ function MapComponent({
         })}
       </MapContainer>
       {showThemeToggle && (
-        <div
-          className={`map-theme-toggle ${isDarkTheme ? 'dark' : 'light'}`}
-          role="group"
-          aria-label="Map theme"
-          onClick={() => onToggleMapTheme?.()}
-        >
+        <div className={`map-theme-toggle ${isDarkTheme ? 'dark' : 'light'}`}>
           <button
             type="button"
-            className="map-theme-toggle-option"
-            aria-pressed={!isDarkTheme}
-            data-theme="light"
+            className="map-theme-toggle-track"
+            role="switch"
+            aria-checked={isDarkTheme}
+            aria-label={`Map theme: ${isDarkTheme ? 'Black' : 'White'}`}
+            onClick={() => onToggleMapTheme?.()}
           >
-            White
-          </button>
-          <button
-            type="button"
-            className="map-theme-toggle-option"
-            aria-pressed={isDarkTheme}
-            data-theme="dark"
-          >
-            Black
+            <span className="map-theme-toggle-thumb" />
           </button>
         </div>
       )}

@@ -253,17 +253,20 @@ async function resolveCountryByCoordinates(lat, lng) {
   }
 }
 
-function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
+function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExpiresAtChange }) {
   const [isPeerJoined, setIsPeerJoined] = useState(false);
   const [messages, setMessages] = useState([]);
   const [showChatInterface, setShowChatInterface] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [isKickoutModalOpen, setIsKickoutModalOpen] = useState(false);
+  const [isExtendSessionModalOpen, setIsExtendSessionModalOpen] = useState(false);
+  const [isExtendingSession, setIsExtendingSession] = useState(false);
   const [isKickingOut, setIsKickingOut] = useState(false);
   const [transportError, setTransportError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
   const [isRoomKilled, setIsRoomKilled] = useState(false);
+  const [currentSessionExpiresAt, setCurrentSessionExpiresAt] = useState(sessionExpiresAt);
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
     Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000))
   );
@@ -281,6 +284,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   const hasHandledKickoutRef = useRef(false);
   const hasConfirmedGuestOwnershipRef = useRef(false);
   const guestMismatchCountRef = useRef(0);
+  const currentSessionExpiresAtRef = useRef(sessionExpiresAt);
+  const promptedExpiresAtRef = useRef(0);
+  const hasHandledExpiredExitRef = useRef(false);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -309,6 +315,28 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     }
     window.location.href = window.location.pathname;
   }, []);
+
+  const applySessionExpiryUpdate = useCallback(
+    nextExpiresAt => {
+      const parsedExpiresAt = parseExpiresAt(nextExpiresAt);
+      if (!Number.isFinite(parsedExpiresAt) || parsedExpiresAt <= Date.now()) {
+        return;
+      }
+      hasHandledExpiredExitRef.current = false;
+      setCurrentSessionExpiresAt(parsedExpiresAt);
+      setRemainingSeconds(Math.max(0, Math.ceil((parsedExpiresAt - Date.now()) / 1000)));
+      promptedExpiresAtRef.current = 0;
+      if (typeof onSessionExpiresAtChange === 'function') {
+        onSessionExpiresAtChange({
+          topic,
+          role,
+          username,
+          sessionExpiresAt: parsedExpiresAt,
+        });
+      }
+    },
+    [onSessionExpiresAtChange, role, topic, username]
+  );
 
   const addMessage = (sender, text, options = {}) => {
     if (!text) {
@@ -346,12 +374,24 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
   }, [messages, showChatInterface]);
 
   useEffect(() => {
+    setCurrentSessionExpiresAt(sessionExpiresAt);
+    currentSessionExpiresAtRef.current = sessionExpiresAt;
+    setRemainingSeconds(Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000)));
+    hasHandledExpiredExitRef.current = false;
+    promptedExpiresAtRef.current = 0;
+  }, [sessionExpiresAt]);
+
+  useEffect(() => {
+    currentSessionExpiresAtRef.current = currentSessionExpiresAt;
+  }, [currentSessionExpiresAt]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
-      setRemainingSeconds(Math.max(0, Math.ceil((sessionExpiresAt - Date.now()) / 1000)));
+      setRemainingSeconds(Math.max(0, Math.ceil((currentSessionExpiresAtRef.current - Date.now()) / 1000)));
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [sessionExpiresAt]);
+  }, []);
 
   useEffect(
     () => () => {
@@ -373,6 +413,37 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       window.cancelAnimationFrame(frameId);
     };
   }, [isComposeModalOpen]);
+
+  useEffect(() => {
+    if (!isHostRole || isExpired || isRoomKilled || isExtendingSession) {
+      return;
+    }
+    if (remainingSeconds !== 10) {
+      return;
+    }
+    if (promptedExpiresAtRef.current === currentSessionExpiresAtRef.current) {
+      return;
+    }
+    promptedExpiresAtRef.current = currentSessionExpiresAtRef.current;
+    setIsExtendSessionModalOpen(true);
+  }, [currentSessionExpiresAt, isExpired, isExtendingSession, isHostRole, isRoomKilled, remainingSeconds]);
+
+  useEffect(() => {
+    if (!isExpired || hasHandledExpiredExitRef.current) {
+      return;
+    }
+    hasHandledExpiredExitRef.current = true;
+    setIsComposeModalOpen(false);
+    setIsKickoutModalOpen(false);
+    setIsExtendSessionModalOpen(false);
+    setInputValue('');
+    const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, role, expired: true };
+    if (typeof onExit === 'function') {
+      onExit(exitPayload);
+      return;
+    }
+    notifyMapAndClose(exitPayload);
+  }, [isExpired, notifyMapAndClose, onExit, role, topic]);
 
   const isWaiting = !isPeerJoined && !isExpired;
   const [selfCountry, setSelfCountry] = useState('');
@@ -567,7 +638,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
         });
 
         mqttClient.on('message', (messageTopic, messageBuffer) => {
-          if (Date.now() >= sessionExpiresAt) {
+          if (Date.now() >= currentSessionExpiresAtRef.current) {
             return;
           }
 
@@ -632,6 +703,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           }
 
           if (messageTopic.endsWith('/chat')) {
+            if (payload?.type === 'session-extended') {
+              applySessionExpiryUpdate(payload?.expiresAt);
+              return;
+            }
             if (payload?.type === 'kill') {
               setIsRoomKilled(true);
               setShowChatInterface(true);
@@ -685,7 +760,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       }
       mqttClientRef.current = null;
     };
-  }, [topic, role, sessionExpiresAt, username, isHostRole, selfCountry, updatePeerInfo, onExit, notifyMapAndClose]);
+  }, [topic, role, username, isHostRole, selfCountry, updatePeerInfo, onExit, notifyMapAndClose, applySessionExpiryUpdate]);
 
   useEffect(() => {
     if (!isHostRole) {
@@ -695,7 +770,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     eventSource.onmessage = event => {
       try {
         const payload = JSON.parse(event.data || '{}');
-        if (payload?.topic !== topic || payload?.type !== 'availability') {
+        if (payload?.topic !== topic) {
+          return;
+        }
+        if (payload?.type === 'extended') {
+          applySessionExpiryUpdate(payload?.expiresAt);
+          return;
+        }
+        if (payload?.type !== 'availability') {
           return;
         }
         if (payload?.availability === 'idle') {
@@ -714,7 +796,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
     return () => {
       eventSource.close();
     };
-  }, [isHostRole, topic]);
+  }, [applySessionExpiryUpdate, isHostRole, topic]);
 
   const notifyGuestLeaveApi = useCallback(async () => {
     if (isHostRole) {
@@ -770,6 +852,50 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
       }),
     []
   );
+
+  const handleExtendSessionConfirm = useCallback(async () => {
+    if (!isHostRole || isExtendingSession || isExpired) {
+      return;
+    }
+    setIsExtendingSession(true);
+    try {
+      const response = await requestJson('/api/rooms/extend', {
+        method: 'POST',
+        body: JSON.stringify({
+          topic,
+          extendSeconds: DEFAULT_SESSION_MS / 1000,
+        }),
+      });
+      const expiresAt = response?.room?.expiresAt;
+      applySessionExpiryUpdate(expiresAt);
+      await publishRoomPayload(
+        `${topic}/chat`,
+        JSON.stringify({
+          type: 'session-extended',
+          senderId: clientIdRef.current,
+          senderRole: role,
+          senderName: username,
+          senderCountry: selfCountry,
+          expiresAt,
+        })
+      );
+      setIsExtendSessionModalOpen(false);
+    } catch (error) {
+      setTransportError(error.message || 'Unable to extend session.');
+    } finally {
+      setIsExtendingSession(false);
+    }
+  }, [
+    applySessionExpiryUpdate,
+    isExpired,
+    isExtendingSession,
+    isHostRole,
+    publishRoomPayload,
+    role,
+    selfCountry,
+    topic,
+    username,
+  ]);
 
   const handleKickoutConfirm = useCallback(async () => {
     if (!isHostRole || isKickingOut) {
@@ -1142,6 +1268,38 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit }) {
           </div>
         </div>
       )}
+      {showChatInterface && isHostRole && isExtendSessionModalOpen && (
+        <div
+          className="room-compose-overlay"
+          onClick={() => {
+            if (!isExtendingSession) {
+              setIsExtendSessionModalOpen(false);
+            }
+          }}
+        >
+          <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
+            <div className="room-confirm-title">Session ends in 10 seconds. Extend 5 minutes?</div>
+            <div className="room-confirm-actions">
+              <button
+                type="button"
+                className="room-confirm-no"
+                onClick={() => setIsExtendSessionModalOpen(false)}
+                disabled={isExtendingSession}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="room-confirm-yes"
+                onClick={handleExtendSessionConfirm}
+                disabled={isExtendingSession}
+              >
+                {isExtendingSession ? 'Extending...' : 'Yes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showChatInterface && isKickoutModalOpen && (
         <div className="room-compose-overlay" onClick={() => setIsKickoutModalOpen(false)}>
           <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
@@ -1456,9 +1614,60 @@ function App() {
     }
   };
 
+  const handleActiveRoomSessionUpdate = useCallback(sessionData => {
+    const nextExpiresAt = parseExpiresAt(sessionData?.sessionExpiresAt);
+    const topic = typeof sessionData?.topic === 'string' ? sessionData.topic : '';
+    const role = sessionData?.role === 'host' ? 'host' : 'guest';
+    const username = typeof sessionData?.username === 'string' ? sessionData.username : '';
+    if (!topic || !Number.isFinite(nextExpiresAt) || nextExpiresAt <= Date.now()) {
+      return;
+    }
+    setActiveChatRoom(prev => {
+      if (!prev || prev.topic !== topic) {
+        return prev;
+      }
+      return {
+        ...prev,
+        sessionExpiresAt: nextExpiresAt,
+      };
+    });
+    setCreatedRoom(prev => {
+      if (!prev || prev.topic !== topic) {
+        return prev;
+      }
+      return {
+        ...prev,
+        sessionExpiresAt: nextExpiresAt,
+      };
+    });
+    setSearchedRooms(prev =>
+      prev.map(room => (room.topic === topic ? { ...room, sessionExpiresAt: nextExpiresAt } : room))
+    );
+    if (role === 'host') {
+      setHostRoomTopic(topic);
+      window.localStorage.setItem(
+        'pyaw-pyaw-active-room',
+        JSON.stringify({
+          topic,
+          role,
+          sessionExpiresAt: nextExpiresAt,
+          username,
+        })
+      );
+    }
+  }, []);
+
   const handleExitChatRoom = useCallback(
     payload => {
       setActiveChatRoom(null);
+      if (payload?.topic) {
+        setCreatedRoom(prev => (prev?.topic === payload.topic ? null : prev));
+        setHostRoomTopic(prev => (prev === payload.topic ? '' : prev));
+        setSearchedRooms(prev => prev.filter(room => room.topic !== payload.topic || room.sessionExpiresAt > Date.now()));
+      }
+      if (payload?.role === 'host' || payload?.terminatedByHost) {
+        window.localStorage.removeItem('pyaw-pyaw-active-room');
+      }
       if (payload?.kickedOut) {
         if (payload?.topic) {
           blockKickedTopic(payload.topic);
@@ -1467,9 +1676,6 @@ function App() {
       }
       if (payload?.terminatedByHost) {
         hideRoomTopic(payload?.topic);
-        setCreatedRoom(prev => (prev?.topic === payload?.topic ? null : prev));
-        setHostRoomTopic('');
-        window.localStorage.removeItem('pyaw-pyaw-active-room');
       }
       refreshRoomsSilently().catch(() => {});
     },
@@ -1716,6 +1922,7 @@ function App() {
             sessionExpiresAt={activeChatRoom.sessionExpiresAt}
             username={activeChatRoom.username}
             onExit={handleExitChatRoom}
+            onSessionExpiresAtChange={handleActiveRoomSessionUpdate}
           />
         </div>
       )}

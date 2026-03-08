@@ -4,6 +4,7 @@ import morgan from 'morgan';
 import {
   createRoom,
   defaultTtlSeconds,
+  extendRoomByTopic,
   expireOldRooms,
   getRoomByTopic,
   listActiveRooms,
@@ -152,6 +153,34 @@ export const createApp = () => {
         topic,
       });
       res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/rooms/extend', async (req, res) => {
+    try {
+      const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';
+      const requestedExtendSeconds = Number(req.body?.extendSeconds);
+      const extendSeconds = Number.isFinite(requestedExtendSeconds) && requestedExtendSeconds > 0
+        ? requestedExtendSeconds
+        : defaultTtlSeconds;
+      if (!topic) {
+        res.status(400).json({ message: 'topic is required' });
+        return;
+      }
+      await expireOldRooms();
+      const room = await extendRoomByTopic({ topic, extendSeconds });
+      if (!room || room.status !== 'active' || Date.parse(room.expiresAt) <= Date.now()) {
+        res.status(404).json({ message: 'room not found or expired' });
+        return;
+      }
+      publishRoomEvent({
+        type: 'extended',
+        topic,
+        expiresAt: room.expiresAt,
+      });
+      res.json({ room });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

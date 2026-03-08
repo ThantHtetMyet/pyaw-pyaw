@@ -123,6 +123,34 @@ export const terminateRoomByTopic = async topic => {
   throwOnError(error, 'Failed to terminate room');
 };
 
+export const extendRoomByTopic = async ({ topic, extendSeconds }) => {
+  const room = await getRoomByTopic(topic);
+  if (!room || room.status !== 'active') {
+    return null;
+  }
+  const currentExpiresAt = Date.parse(room.expiresAt);
+  if (!Number.isFinite(currentExpiresAt) || currentExpiresAt <= Date.now()) {
+    return null;
+  }
+  const nextExpiresAt = new Date(currentExpiresAt + extendSeconds * 1000).toISOString();
+  const { data, error } = await supabase
+    .from(roomsTable)
+    .update({
+      expires_at: nextExpiresAt,
+      last_seen_at: nowIso(),
+    })
+    .eq('topic', topic)
+    .eq('status', 'active')
+    .select('*')
+    .single();
+
+  if (error && error.code === 'PGRST116') {
+    return null;
+  }
+  throwOnError(error, 'Failed to extend room session');
+  return data ? toRoomDto(data) : null;
+};
+
 export const insertRoomMessage = async ({ topic, senderRole, senderId, text, payload }) => {
   const { error } = await supabase.from(messagesTable).insert({
     id: uuidv4(),

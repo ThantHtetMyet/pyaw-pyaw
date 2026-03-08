@@ -357,10 +357,9 @@ code {
   right: 20px;
   bottom: max(20px, env(safe-area-inset-bottom));
   z-index: 1201;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 6px;
+  width: 78px;
+  height: 40px;
+  padding: 0;
   border-radius: 999px;
   border: 0;
   background: transparent;
@@ -389,35 +388,40 @@ code {
 .map-theme-toggle::after {
   content: '';
   position: absolute;
-  inset: 8px;
+  inset: 3px;
   border-radius: 999px;
   background: linear-gradient(135deg, #7a6bff 0%, #6a3dff 100%);
   z-index: 1;
 }
 
-.map-theme-toggle-option {
+.map-theme-toggle-track {
   position: relative;
   z-index: 2;
   border: 0;
   border-radius: 999px;
-  padding: 9px 20px;
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: #f7f4ff;
+  width: 100%;
+  height: 100%;
+  padding: 0;
   background: transparent;
-  box-shadow: none;
   cursor: pointer;
-  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  outline: none;
 }
 
-.map-theme-toggle-option[aria-pressed='true'] {
+.map-theme-toggle-thumb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   background: #ffffff;
-  color: #6a3dff;
+  margin-left: 5px;
   box-shadow: 0 8px 16px rgba(28, 18, 70, 0.25);
+  transition: transform 0.25s ease;
 }
 
-.map-theme-toggle-option:hover {
-  transform: translateY(-1px);
+.map-theme-toggle.dark .map-theme-toggle-thumb {
+  transform: translateX(38px);
 }
 
 .map-theme-toggle.light {
@@ -432,6 +436,10 @@ code {
   filter: saturate(1.1);
 }
 
+.map-theme-toggle-track:focus-visible .map-theme-toggle-thumb {
+  box-shadow: 0 0 0 2px rgba(247, 244, 255, 0.9), 0 8px 16px rgba(28, 18, 70, 0.25);
+}
+
 @keyframes borderFlow {
   0% {
     background-position: 0% 50%;
@@ -439,18 +447,6 @@ code {
   100% {
     background-position: 200% 50%;
   }
-}
-
-.map-theme-toggle.light .map-theme-toggle-option {
-  color: #f7f4ff;
-  background: transparent;
-  box-shadow: none;
-}
-
-.map-theme-toggle.light .map-theme-toggle-option[aria-pressed='true'] {
-  background: #ffffff;
-  color: #6a3dff;
-  box-shadow: 0 8px 16px rgba(28, 18, 70, 0.25);
 }
 
 .scan-modal-backdrop {
