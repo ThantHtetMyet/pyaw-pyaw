@@ -76,6 +76,15 @@ function getOrCreateClientId() {
   return nextId;
 }
 
+function createMqttConnectionId(baseClientId, role) {
+  const normalizedBase = typeof baseClientId === 'string' && baseClientId.trim()
+    ? baseClientId.trim()
+    : `web-${Math.random().toString(36).slice(2, 10)}`;
+  const normalizedRole = role === 'host' ? 'host' : 'guest';
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  return `${normalizedBase}-${normalizedRole}-${randomSuffix}`;
+}
+
 function buildHostIdPayload(hostId, roomData) {
   if (!hostId) {
     return hostId;
@@ -293,6 +302,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const [remoteMediaStream, setRemoteMediaStream] = useState(null);
   const mqttClientRef = useRef(null);
   const clientIdRef = useRef(getOrCreateClientId());
+  const mqttConnectionIdRef = useRef(createMqttConnectionId(clientIdRef.current, role));
   const hasSeenPeerRef = useRef(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -845,7 +855,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         const roomChannels = [`${topic}/presence`, `${topic}/chat`];
 
         mqttClient = mqtt.connect(wsUrl, {
-          clientId: clientIdRef.current,
+          clientId: mqttConnectionIdRef.current,
           reconnectPeriod: 2000,
           connectTimeout: 10000,
           clean: true,
@@ -911,7 +921,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           }
 
           const senderId = payload?.senderId || payload?.clientId;
-          if (senderId && senderId === clientIdRef.current) {
+          const senderRole = payload?.senderRole === 'host' ? 'host' : 'guest';
+          if (senderId && senderId === clientIdRef.current && senderRole === role) {
             return;
           }
 
