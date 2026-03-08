@@ -579,12 +579,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         resolve(peerClient);
       });
       peerClient.on('call', async mediaConnection => {
-        if (!isVideoCallActiveRef.current) {
-          mediaConnection.close();
-          return;
-        }
         try {
           const stream = await ensureLocalMediaStream();
+          setIsVideoCallActive(true);
+          isVideoCallActiveRef.current = true;
           bindPeerConnection(mediaConnection);
           mediaConnection.answer(stream);
         } catch (error) {
@@ -645,6 +643,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     try {
       setTransportError('');
       setIsVideoCallActive(true);
+      isVideoCallActiveRef.current = true;
       await ensurePeerConnection(true);
       addMessage('System', 'Video call started.', { type: 'system' });
     } catch (error) {
@@ -1562,6 +1561,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       clearIncomingVideoRequestTimer();
       setIsVideoRequestModalOpen(false);
       setIsVideoCallActive(true);
+      isVideoCallActiveRef.current = true;
       await ensureLocalMediaStream();
       publishVideoSignal({ type: 'video-accept', requestId: incomingVideoRequestIdRef.current });
       addMessage('System', 'Video request accepted.', { type: 'system' });
@@ -2053,11 +2053,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       {showChatInterface && isVideoRequestPending && (
         <div className="room-compose-overlay" onClick={handleCancelOutgoingVideoRequest}>
           <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
-            <div className="room-confirm-title">Calling {outgoingVideoRequestLabel}...</div>
-            <div className="room-confirm-actions room-video-request-actions">
+            <div className="room-confirm-title-row">
+              <div className="room-confirm-title">Calling {outgoingVideoRequestLabel}...</div>
               <button
                 type="button"
-                className="room-confirm-icon-button room-confirm-icon-reject"
+                className="room-confirm-icon-button room-confirm-icon-reject room-confirm-icon-inline"
                 onClick={handleCancelOutgoingVideoRequest}
                 aria-label="Cancel video request"
               >

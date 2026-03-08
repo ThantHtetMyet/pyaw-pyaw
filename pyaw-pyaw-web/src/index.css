@@ -1879,6 +1879,13 @@ code {
   color: rgba(226, 245, 255, 0.96);
 }
 
+.room-confirm-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
 .room-confirm-actions {
   display: flex;
   justify-content: flex-end;
@@ -1930,6 +1937,12 @@ code {
   width: 26px;
   height: 26px;
   fill: currentColor;
+}
+
+.room-confirm-icon-inline {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
 }
 
 .room-confirm-icon-reject {
