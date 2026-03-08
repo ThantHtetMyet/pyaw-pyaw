@@ -1,4 +1,5 @@
 import mqtt from 'mqtt';
+import Peer from 'simple-peer';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
@@ -12,6 +13,7 @@ const ROOM_ACTIVITY_EVENT_KEY = 'pyaw-pyaw-room-activity-event';
 const HIDDEN_TOPICS_KEY = 'pyaw-pyaw-hidden-topics';
 const KICKED_TOPICS_KEY = 'pyaw-pyaw-kicked-topics';
 const VIDEO_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const VIDEO_REQUEST_TIMEOUT_MS = 60 * 1000;
 
 function normalizeBaseUrl(urlText) {
   return (urlText || '').trim().replace(/\/+$/, '');
@@ -321,6 +323,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const isChatLockedRef = useRef(false);
   const isVideoCallActiveRef = useRef(isVideoCallActive);
   const isVideoRequestPendingRef = useRef(isVideoRequestPending);
+  const currentVideoRequestIdRef = useRef('');
+  const incomingVideoRequestIdRef = useRef('');
+  const incomingVideoRequestTimerRef = useRef(null);
   const videoSignalHandlersRef = useRef({
     publishVideoSignal: () => {},
     clearVideoRequestTimer: () => {},
@@ -328,6 +333,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     handleIncomingVideoOffer: () => Promise.resolve(),
     handleIncomingVideoAnswer: () => Promise.resolve(),
     handleIncomingVideoIceCandidate: () => Promise.resolve(),
+    handleIncomingWebrtcSignal: () => Promise.resolve(),
     resetVideoCallState: () => {},
   });
   const peerConnectionRef = useRef(null);
@@ -458,11 +464,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!peerConnection) {
       return;
     }
-    peerConnection.onicecandidate = null;
-    peerConnection.ontrack = null;
-    peerConnection.onconnectionstatechange = null;
-    peerConnection.oniceconnectionstatechange = null;
-    peerConnection.close();
+    if (typeof peerConnection.removeAllListeners === 'function') {
+      peerConnection.removeAllListeners();
+    }
+    if (typeof peerConnection.destroy === 'function') {
+      peerConnection.destroy();
+    }
     peerConnectionRef.current = null;
   }, []);
 
@@ -472,6 +479,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
     window.clearTimeout(videoRequestTimerRef.current);
     videoRequestTimerRef.current = null;
+  }, []);
+
+  const clearIncomingVideoRequestTimer = useCallback(() => {
+    if (!incomingVideoRequestTimerRef.current) {
+      return;
+    }
+    window.clearTimeout(incomingVideoRequestTimerRef.current);
+    incomingVideoRequestTimerRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -496,7 +511,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
   const resetVideoCallState = useCallback(() => {
     clearVideoRequestTimer();
+    clearIncomingVideoRequestTimer();
     pendingRemoteIceCandidatesRef.current = [];
+    currentVideoRequestIdRef.current = '';
+    incomingVideoRequestIdRef.current = '';
     hasConnectedOnceRef.current = false;
     senderQualityProfileRef.current = 'balanced';
     reconnectAttemptCountRef.current = 0;
@@ -513,54 +531,21 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     setIsVideoCallActive(false);
     setIsVideoRequestPending(false);
     setIsVideoRequestModalOpen(false);
-  }, [clearVideoRequestTimer, closePeerConnection]);
+  }, [clearIncomingVideoRequestTimer, clearVideoRequestTimer, closePeerConnection]);
 
-  const flushPendingRemoteIceCandidates = useCallback(async peerConnection => {
-    if (!peerConnection?.remoteDescription) {
-      return;
+  const resolveRtcConnection = useCallback(() => {
+    const peer = peerConnectionRef.current;
+    if (!peer || typeof peer !== 'object') {
+      return null;
     }
-    const queuedCandidates = pendingRemoteIceCandidatesRef.current;
-    if (!queuedCandidates.length) {
-      return;
+    if (peer._pc && typeof peer._pc.getSenders === 'function') {
+      return peer._pc;
     }
-    pendingRemoteIceCandidatesRef.current = [];
-    for (const queuedCandidate of queuedCandidates) {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(queuedCandidate));
-      } catch {
-      }
-    }
+    return null;
   }, []);
 
-  const restartIceConnection = useCallback(async () => {
-    const peerConnection = peerConnectionRef.current;
-    if (!peerConnection) {
-      return;
-    }
-    if (peerConnection.signalingState !== 'stable') {
-      return;
-    }
-    if (isRestartingIceRef.current) {
-      return;
-    }
-    isRestartingIceRef.current = true;
-    makingOfferRef.current = true;
-    try {
-      const restartOffer = await peerConnection.createOffer({ iceRestart: true });
-      await peerConnection.setLocalDescription(restartOffer);
-      publishVideoSignal({
-        type: 'webrtc-offer',
-        sdp: restartOffer,
-      });
-    } catch {
-    } finally {
-      makingOfferRef.current = false;
-      isRestartingIceRef.current = false;
-    }
-  }, [publishVideoSignal]);
-
   const applyVideoSenderProfile = useCallback(async profile => {
-    const peerConnection = peerConnectionRef.current;
+    const peerConnection = resolveRtcConnection();
     if (!peerConnection) {
       return;
     }
@@ -598,10 +583,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       })
     );
     senderQualityProfileRef.current = profile;
-  }, []);
+  }, [resolveRtcConnection]);
 
   const startSenderQualityMonitor = useCallback(() => {
-    const peerConnection = peerConnectionRef.current;
+    const peerConnection = resolveRtcConnection();
     if (!peerConnection) {
       return;
     }
@@ -609,7 +594,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       return;
     }
     senderQualityMonitorTimerRef.current = window.setInterval(async () => {
-      const currentPeerConnection = peerConnectionRef.current;
+      const currentPeerConnection = resolveRtcConnection();
       if (!currentPeerConnection || currentPeerConnection.connectionState !== 'connected') {
         return;
       }
@@ -648,7 +633,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       } catch {
       }
     }, 5000);
-  }, [applyVideoSenderProfile]);
+  }, [applyVideoSenderProfile, resolveRtcConnection]);
 
   const handleEndVideoCall = useCallback(
     shouldNotifyPeer => {
@@ -689,55 +674,26 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     return stream;
   }, []);
 
-  const ensurePeerConnection = useCallback(async () => {
+  const ensurePeerConnection = useCallback(async (isInitiator = false) => {
     if (peerConnectionRef.current) {
       return peerConnectionRef.current;
     }
-    const peerConnection = new RTCPeerConnection({ iceServers: VIDEO_ICE_SERVERS });
-    peerConnection.onicecandidate = event => {
-      if (!event.candidate) {
-        return;
-      }
+    const stream = await ensureLocalMediaStream();
+    const peerConnection = new Peer({
+      initiator: isInitiator,
+      trickle: true,
+      stream,
+      config: { iceServers: VIDEO_ICE_SERVERS },
+    });
+    peerConnection.on('signal', signalData => {
       publishVideoSignal({
-        type: 'webrtc-ice',
-        candidate: event.candidate,
+        type: 'webrtc-signal',
+        signal: signalData,
       });
-    };
-    peerConnection.ontrack = event => {
-      const [stream] = event.streams || [];
-      if (stream) {
-        remoteStreamRef.current = stream;
-        setRemoteMediaStream(stream);
-        hasConnectedOnceRef.current = true;
-        if (connectionLossTimerRef.current) {
-          window.clearTimeout(connectionLossTimerRef.current);
-          connectionLossTimerRef.current = null;
-        }
-        if (reconnectRetryTimerRef.current) {
-          window.clearInterval(reconnectRetryTimerRef.current);
-          reconnectRetryTimerRef.current = null;
-        }
-        reconnectAttemptCountRef.current = 0;
-        return;
-      }
-      const incomingTrack = event.track;
-      if (!incomingTrack) {
-        return;
-      }
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
-      }
-      remoteStreamRef.current.addTrack(incomingTrack);
-      setRemoteMediaStream(remoteStreamRef.current);
-      incomingTrack.onunmute = () => {
-        if (!remoteStreamRef.current) {
-          remoteStreamRef.current = new MediaStream();
-        }
-        if (!remoteStreamRef.current.getTracks().includes(incomingTrack)) {
-          remoteStreamRef.current.addTrack(incomingTrack);
-        }
-        setRemoteMediaStream(remoteStreamRef.current);
-      };
+    });
+    peerConnection.on('stream', streamData => {
+      remoteStreamRef.current = streamData;
+      setRemoteMediaStream(streamData);
       hasConnectedOnceRef.current = true;
       if (connectionLossTimerRef.current) {
         window.clearTimeout(connectionLossTimerRef.current);
@@ -748,92 +704,64 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         reconnectRetryTimerRef.current = null;
       }
       reconnectAttemptCountRef.current = 0;
-    };
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      if (state === 'connected') {
-        hasConnectedOnceRef.current = true;
-        startSenderQualityMonitor();
-        void applyVideoSenderProfile('balanced');
-        if (connectionLossTimerRef.current) {
-          window.clearTimeout(connectionLossTimerRef.current);
-          connectionLossTimerRef.current = null;
-        }
-        if (reconnectRetryTimerRef.current) {
-          window.clearInterval(reconnectRetryTimerRef.current);
-          reconnectRetryTimerRef.current = null;
-        }
-        reconnectAttemptCountRef.current = 0;
+    });
+    peerConnection.on('connect', () => {
+      hasConnectedOnceRef.current = true;
+      startSenderQualityMonitor();
+      void applyVideoSenderProfile('balanced');
+      if (connectionLossTimerRef.current) {
+        window.clearTimeout(connectionLossTimerRef.current);
+        connectionLossTimerRef.current = null;
+      }
+      if (reconnectRetryTimerRef.current) {
+        window.clearInterval(reconnectRetryTimerRef.current);
+        reconnectRetryTimerRef.current = null;
+      }
+      reconnectAttemptCountRef.current = 0;
+    });
+    peerConnection.on('close', () => {
+      if (!isVideoCallActiveRef.current) {
         return;
       }
-      if (state === 'closed') {
-        resetVideoCallState();
-        return;
-      }
-      if ((state === 'disconnected' || state === 'failed') && hasConnectedOnceRef.current) {
+      if (hasConnectedOnceRef.current) {
         if (!connectionLossTimerRef.current) {
           connectionLossTimerRef.current = window.setTimeout(() => {
             connectionLossTimerRef.current = null;
-            const currentState = peerConnection.connectionState;
-            if (currentState === 'disconnected' || currentState === 'failed' || currentState === 'closed') {
+            if (isVideoCallActiveRef.current) {
               resetVideoCallState();
             }
           }, 45000);
         }
-        if (!reconnectRetryTimerRef.current) {
-          reconnectRetryTimerRef.current = window.setInterval(() => {
-            if (peerConnection.connectionState === 'connected') {
-              window.clearInterval(reconnectRetryTimerRef.current);
-              reconnectRetryTimerRef.current = null;
-              reconnectAttemptCountRef.current = 0;
-              return;
-            }
-            if (reconnectAttemptCountRef.current >= 6) {
-              window.clearInterval(reconnectRetryTimerRef.current);
-              reconnectRetryTimerRef.current = null;
-              return;
-            }
-            reconnectAttemptCountRef.current += 1;
-            void restartIceConnection();
-          }, 5000);
-        }
+        return;
       }
-    };
-    peerConnection.oniceconnectionstatechange = () => {
-      const iceState = peerConnection.iceConnectionState;
-      if (iceState === 'connected' || iceState === 'completed') {
-        hasConnectedOnceRef.current = true;
-        if (connectionLossTimerRef.current) {
-          window.clearTimeout(connectionLossTimerRef.current);
-          connectionLossTimerRef.current = null;
-        }
-        if (reconnectRetryTimerRef.current) {
-          window.clearInterval(reconnectRetryTimerRef.current);
-          reconnectRetryTimerRef.current = null;
-        }
-        reconnectAttemptCountRef.current = 0;
+      resetVideoCallState();
+    });
+    peerConnection.on('error', error => {
+      if (!isVideoCallActiveRef.current) {
+        return;
       }
-    };
-    const stream = await ensureLocalMediaStream();
-    stream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, stream);
+      setTransportError(error?.message || 'Video call transport error.');
     });
     peerConnectionRef.current = peerConnection;
+    const queuedSignals = pendingRemoteIceCandidatesRef.current;
+    if (queuedSignals.length) {
+      pendingRemoteIceCandidatesRef.current = [];
+      queuedSignals.forEach(queuedSignal => {
+        try {
+          peerConnection.signal(queuedSignal);
+        } catch {
+        }
+      });
+    }
     return peerConnection;
-  }, [applyVideoSenderProfile, ensureLocalMediaStream, publishVideoSignal, resetVideoCallState, restartIceConnection, startSenderQualityMonitor]);
+  }, [applyVideoSenderProfile, ensureLocalMediaStream, publishVideoSignal, resetVideoCallState, startSenderQualityMonitor]);
 
   const handleStartVideoOffer = useCallback(async () => {
     try {
       setTransportError('');
       setIsVideoCallActive(true);
-      const peerConnection = await ensurePeerConnection();
+      await ensurePeerConnection(true);
       makingOfferRef.current = true;
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      publishVideoSignal({
-        type: 'webrtc-offer',
-        sdp: offer,
-      });
       addMessage('System', 'Video call started.', { type: 'system' });
     } catch (error) {
       resetVideoCallState();
@@ -841,86 +769,55 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     } finally {
       makingOfferRef.current = false;
     }
-  }, [ensurePeerConnection, publishVideoSignal, resetVideoCallState]);
+  }, [ensurePeerConnection, resetVideoCallState]);
 
-  const handleIncomingVideoOffer = useCallback(
+  const handleIncomingWebrtcSignal = useCallback(
     async payload => {
-      if (!payload?.sdp) {
+      const signalData = payload?.signal || payload?.sdp || payload?.candidate;
+      if (!signalData || typeof signalData !== 'object') {
         return;
       }
       try {
         setTransportError('');
         setIsVideoCallActive(true);
-        const peerConnection = await ensurePeerConnection();
-        const incomingDescription = new RTCSessionDescription(payload.sdp);
-        const offerCollision =
-          incomingDescription.type === 'offer' &&
-          (makingOfferRef.current || peerConnection.signalingState !== 'stable');
-        ignoreOfferRef.current = !isPolitePeerRef.current && offerCollision;
-        if (ignoreOfferRef.current) {
-          return;
+        const isOfferSignal = signalData.type === 'offer';
+        const isAnswerSignal = signalData.type === 'answer';
+        let peerConnection = peerConnectionRef.current;
+        if (!peerConnection) {
+          if (!isOfferSignal && !isAnswerSignal) {
+            pendingRemoteIceCandidatesRef.current = [...pendingRemoteIceCandidatesRef.current, signalData].slice(-40);
+            return;
+          }
+          peerConnection = await ensurePeerConnection(false);
         }
-        if (offerCollision && peerConnection.signalingState === 'have-local-offer') {
-          await Promise.all([
-            peerConnection.setLocalDescription({ type: 'rollback' }),
-            peerConnection.setRemoteDescription(incomingDescription),
-          ]);
-        } else {
-          await peerConnection.setRemoteDescription(incomingDescription);
-        }
-        await flushPendingRemoteIceCandidates(peerConnection);
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        publishVideoSignal({
-          type: 'webrtc-answer',
-          sdp: answer,
-        });
+        peerConnection.signal(signalData);
       } catch (error) {
-        resetVideoCallState();
-        setTransportError(error.message || 'Unable to connect video call.');
+        setTransportError(error.message || 'Unable to sync video signal.');
       }
     },
-    [ensurePeerConnection, flushPendingRemoteIceCandidates, publishVideoSignal, resetVideoCallState]
+    [ensurePeerConnection]
   );
 
-  const handleIncomingVideoAnswer = useCallback(
-    async payload => {
-      if (!payload?.sdp) {
-        return;
-      }
-      const peerConnection = peerConnectionRef.current;
-      if (!peerConnection) {
-        return;
-      }
-      if (peerConnection.signalingState !== 'have-local-offer') {
-        return;
-      }
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-        await flushPendingRemoteIceCandidates(peerConnection);
-      } catch (error) {
-        resetVideoCallState();
-        setTransportError(error.message || 'Unable to finalize video call.');
-      }
-    },
-    [flushPendingRemoteIceCandidates, resetVideoCallState]
-  );
+  const handleIncomingVideoOffer = useCallback(async payload => {
+    if (!payload?.sdp) {
+      return;
+    }
+    await handleIncomingWebrtcSignal({ signal: payload.sdp });
+  }, [handleIncomingWebrtcSignal]);
+
+  const handleIncomingVideoAnswer = useCallback(async payload => {
+    if (!payload?.sdp) {
+      return;
+    }
+    await handleIncomingWebrtcSignal({ signal: payload.sdp });
+  }, [handleIncomingWebrtcSignal]);
 
   const handleIncomingVideoIceCandidate = useCallback(async payload => {
-    const candidate = payload?.candidate;
-    const peerConnection = peerConnectionRef.current;
-    if (!candidate) {
+    if (!payload?.candidate) {
       return;
     }
-    if (!peerConnection || !peerConnection.remoteDescription) {
-      pendingRemoteIceCandidatesRef.current = [...pendingRemoteIceCandidatesRef.current, candidate].slice(-30);
-      return;
-    }
-    try {
-      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch {
-    }
-  }, []);
+    await handleIncomingWebrtcSignal({ signal: payload.candidate });
+  }, [handleIncomingWebrtcSignal]);
 
   videoSignalHandlersRef.current.publishVideoSignal = publishVideoSignal;
   videoSignalHandlersRef.current.clearVideoRequestTimer = clearVideoRequestTimer;
@@ -928,6 +825,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   videoSignalHandlersRef.current.handleIncomingVideoOffer = handleIncomingVideoOffer;
   videoSignalHandlersRef.current.handleIncomingVideoAnswer = handleIncomingVideoAnswer;
   videoSignalHandlersRef.current.handleIncomingVideoIceCandidate = handleIncomingVideoIceCandidate;
+  videoSignalHandlersRef.current.handleIncomingWebrtcSignal = handleIncomingWebrtcSignal;
   videoSignalHandlersRef.current.resetVideoCallState = resetVideoCallState;
 
   const scrollToBottom = (behavior = 'smooth') => {
@@ -1371,11 +1269,22 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
             const videoSignalHandlers = videoSignalHandlersRef.current;
             if (payload?.type === 'video-request') {
               if (isChatLockedRef.current || isVideoCallActiveRef.current) {
-                videoSignalHandlers.publishVideoSignal({ type: 'video-reject' });
+                videoSignalHandlers.publishVideoSignal({
+                  type: 'video-reject',
+                  requestId: typeof payload?.requestId === 'string' ? payload.requestId : '',
+                });
                 return;
               }
+              const expiresAt = Number(payload?.expiresAt);
+              const remainingMs = Number.isFinite(expiresAt) ? expiresAt - Date.now() : VIDEO_REQUEST_TIMEOUT_MS;
+              if (remainingMs <= 0) {
+                return;
+              }
+              clearIncomingVideoRequestTimer();
               videoSignalHandlers.clearVideoRequestTimer();
               setIsVideoRequestPending(false);
+              currentVideoRequestIdRef.current = '';
+              incomingVideoRequestIdRef.current = typeof payload?.requestId === 'string' ? payload.requestId : '';
               setVideoRequestSenderRole(payload?.senderRole === 'host' ? 'host' : 'guest');
               setVideoRequestSenderName(
                 typeof payload?.senderName === 'string' && payload.senderName.trim()
@@ -1385,22 +1294,60 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                     : 'Client'
               );
               setIsVideoRequestModalOpen(true);
+              incomingVideoRequestTimerRef.current = window.setTimeout(() => {
+                incomingVideoRequestTimerRef.current = null;
+                setIsVideoRequestModalOpen(false);
+                incomingVideoRequestIdRef.current = '';
+                addMessage('System', 'Video request expired.', { type: 'system' });
+              }, Math.min(VIDEO_REQUEST_TIMEOUT_MS, remainingMs));
               return;
             }
             if (payload?.type === 'video-accept') {
               if (!isVideoRequestPendingRef.current) {
                 return;
               }
+              if (payload?.requestId && payload.requestId !== currentVideoRequestIdRef.current) {
+                return;
+              }
               videoSignalHandlers.clearVideoRequestTimer();
+              currentVideoRequestIdRef.current = '';
               setIsVideoRequestPending(false);
               setIsVideoCallActive(true);
               void videoSignalHandlers.handleStartVideoOffer();
               return;
             }
             if (payload?.type === 'video-reject') {
+              const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+              const isOutgoingMatch = requestId && requestId === currentVideoRequestIdRef.current;
+              const isIncomingMatch = requestId && requestId === incomingVideoRequestIdRef.current;
+              if (requestId && !isOutgoingMatch && !isIncomingMatch) {
+                return;
+              }
               videoSignalHandlers.clearVideoRequestTimer();
+              currentVideoRequestIdRef.current = '';
+              clearIncomingVideoRequestTimer();
+              incomingVideoRequestIdRef.current = '';
+              setIsVideoRequestModalOpen(false);
               setIsVideoRequestPending(false);
-              addMessage('System', `${payload?.senderName || 'Peer'} declined video call.`, { type: 'system' });
+              if (isIncomingMatch) {
+                addMessage('System', `${payload?.senderName || 'Peer'} canceled video request.`, { type: 'system' });
+              } else {
+                addMessage('System', `${payload?.senderName || 'Peer'} declined video call.`, { type: 'system' });
+              }
+              return;
+            }
+            if (payload?.type === 'video-cancel') {
+              const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+              if (requestId && requestId !== incomingVideoRequestIdRef.current && requestId !== currentVideoRequestIdRef.current) {
+                return;
+              }
+              clearIncomingVideoRequestTimer();
+              videoSignalHandlers.clearVideoRequestTimer();
+              currentVideoRequestIdRef.current = '';
+              incomingVideoRequestIdRef.current = '';
+              setIsVideoRequestModalOpen(false);
+              setIsVideoRequestPending(false);
+              addMessage('System', `${payload?.senderName || 'Peer'} canceled video request.`, { type: 'system' });
               return;
             }
             if (payload?.type === 'video-end') {
@@ -1418,6 +1365,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
             }
             if (payload?.type === 'webrtc-ice') {
               void videoSignalHandlers.handleIncomingVideoIceCandidate(payload);
+              return;
+            }
+            if (payload?.type === 'webrtc-signal') {
+              void videoSignalHandlers.handleIncomingWebrtcSignal(payload);
               return;
             }
             if (payload?.type === 'kill') {
@@ -1488,6 +1439,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     };
   }, [
     applySessionExpiryUpdate,
+    clearIncomingVideoRequestTimer,
     isHostRole,
     notifyMapAndClose,
     onExit,
@@ -1733,36 +1685,56 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (isVideoRequestPending) {
       return;
     }
+    const requestId = `${clientIdRef.current}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const expiresAt = Date.now() + VIDEO_REQUEST_TIMEOUT_MS;
     clearVideoRequestTimer();
+    currentVideoRequestIdRef.current = requestId;
     setIsVideoRequestPending(true);
-    publishVideoSignal({ type: 'video-request' });
+    publishVideoSignal({ type: 'video-request', requestId, expiresAt });
     addMessage('System', 'Video call request sent.', { type: 'system' });
     videoRequestTimerRef.current = window.setTimeout(() => {
       videoRequestTimerRef.current = null;
+      currentVideoRequestIdRef.current = '';
       setIsVideoRequestPending(false);
       addMessage('System', 'No response to video request. Please try again.', { type: 'system' });
-    }, 12000);
+    }, VIDEO_REQUEST_TIMEOUT_MS);
   };
 
   const handleAcceptVideoRequest = async () => {
     try {
       setTransportError('');
+      clearIncomingVideoRequestTimer();
       setIsVideoRequestModalOpen(false);
       setIsVideoCallActive(true);
       await ensureLocalMediaStream();
-      publishVideoSignal({ type: 'video-accept' });
+      publishVideoSignal({ type: 'video-accept', requestId: incomingVideoRequestIdRef.current });
       addMessage('System', 'Video request accepted.', { type: 'system' });
+      incomingVideoRequestIdRef.current = '';
     } catch (error) {
-      publishVideoSignal({ type: 'video-reject' });
+      publishVideoSignal({ type: 'video-reject', requestId: incomingVideoRequestIdRef.current });
       resetVideoCallState();
       setTransportError(error.message || 'Unable to access camera/microphone.');
     }
   };
 
   const handleRejectVideoRequest = () => {
+    clearIncomingVideoRequestTimer();
     setIsVideoRequestModalOpen(false);
-    publishVideoSignal({ type: 'video-reject' });
+    publishVideoSignal({ type: 'video-reject', requestId: incomingVideoRequestIdRef.current });
+    incomingVideoRequestIdRef.current = '';
     addMessage('System', 'Video request rejected.', { type: 'system' });
+  };
+
+  const handleCancelOutgoingVideoRequest = () => {
+    if (!isVideoRequestPending) {
+      return;
+    }
+    const requestId = currentVideoRequestIdRef.current;
+    clearVideoRequestTimer();
+    currentVideoRequestIdRef.current = '';
+    setIsVideoRequestPending(false);
+    publishVideoSignal({ type: 'video-cancel', requestId });
+    addMessage('System', 'Video call request canceled.', { type: 'system' });
   };
 
   const openComposeModal = () => {
@@ -1915,6 +1887,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const isClientJoined = !isHostRole || isPeerJoined;
   const videoRequestRoleLabel = videoRequestSenderRole === 'host' ? 'Host' : 'Client';
   const videoRequestLabel = videoRequestSenderName || videoRequestRoleLabel;
+  const outgoingVideoRequestLabel = peerName || (isHostRole ? 'Client' : 'Host');
   const isVideoButtonDisabled = isChatLocked || isWaiting || (!isVideoCallActive && !isPeerJoined);
   const showVideoPanel = Boolean(localMediaStream || remoteMediaStream || isVideoCallActive);
   const isVideoLayoutActive = isVideoCallActive || showVideoPanel;
@@ -2196,20 +2169,45 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         <div className="room-compose-overlay" onClick={handleRejectVideoRequest}>
           <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
             <div className="room-confirm-title">{videoRequestLabel} asks you to turn on video call.</div>
-            <div className="room-confirm-actions">
+            <div className="room-confirm-actions room-video-request-actions">
               <button
                 type="button"
-                className="room-confirm-no"
+                className="room-confirm-icon-button room-confirm-icon-reject"
                 onClick={handleRejectVideoRequest}
+                aria-label="Reject video request"
               >
-                No
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18.3 6.71a1 1 0 0 0-1.41 0L12 11.59 7.11 6.7A1 1 0 1 0 5.7 8.11L10.59 13l-4.9 4.89a1 1 0 0 0 1.42 1.41L12 14.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 13l4.89-4.89a1 1 0 0 0 0-1.4Z" />
+                </svg>
               </button>
               <button
                 type="button"
-                className="room-confirm-yes"
+                className="room-confirm-icon-button room-confirm-icon-accept"
                 onClick={handleAcceptVideoRequest}
+                aria-label="Accept video request"
               >
-                Yes
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9.55 18.6a1 1 0 0 1-.71-.29l-4.6-4.6a1 1 0 1 1 1.42-1.42l3.89 3.9 8.79-8.8a1 1 0 1 1 1.41 1.42l-9.49 9.5a1 1 0 0 1-.71.29Z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showChatInterface && isVideoRequestPending && (
+        <div className="room-compose-overlay" onClick={handleCancelOutgoingVideoRequest}>
+          <div className="room-confirm-modal" onClick={event => event.stopPropagation()}>
+            <div className="room-confirm-title">Calling {outgoingVideoRequestLabel}...</div>
+            <div className="room-confirm-actions room-video-request-actions">
+              <button
+                type="button"
+                className="room-confirm-icon-button room-confirm-icon-reject"
+                onClick={handleCancelOutgoingVideoRequest}
+                aria-label="Cancel video request"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18.3 6.71a1 1 0 0 0-1.41 0L12 11.59 7.11 6.7A1 1 0 1 0 5.7 8.11L10.59 13l-4.9 4.89a1 1 0 0 0 1.42 1.41L12 14.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 13l4.89-4.89a1 1 0 0 0 0-1.4Z" />
+                </svg>
               </button>
             </div>
           </div>

@@ -1903,6 +1903,69 @@ code {
   color: #f2fffe;
 }
 
+.room-video-request-actions {
+  justify-content: center;
+  gap: 16px;
+}
+
+.room-confirm-icon-button {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid rgba(180, 231, 255, 0.6);
+  background: rgba(18, 42, 76, 0.7);
+  color: #e8f7ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.room-confirm-icon-button:hover {
+  transform: translateY(-1px) scale(1.03);
+}
+
+.room-confirm-icon-button svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+
+.room-confirm-icon-reject {
+  border-color: rgba(255, 158, 188, 0.76);
+  background: linear-gradient(135deg, rgba(177, 46, 101, 0.9), rgba(132, 39, 82, 0.9));
+  color: #ffeef4;
+  animation: rejectPulse 1.15s ease-in-out infinite;
+}
+
+.room-confirm-icon-accept {
+  border-color: rgba(155, 236, 223, 0.76);
+  background: linear-gradient(135deg, rgba(43, 179, 151, 0.92), rgba(40, 144, 188, 0.86));
+  color: #effff9;
+  animation: acceptPulse 1.15s ease-in-out infinite;
+}
+
+@keyframes rejectPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(192, 70, 118, 0.42);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(192, 70, 118, 0);
+  }
+}
+
+@keyframes acceptPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(72, 179, 160, 0.42);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(72, 179, 160, 0);
+  }
+}
+
 .room-compose-header {
   display: flex;
   align-items: center;
