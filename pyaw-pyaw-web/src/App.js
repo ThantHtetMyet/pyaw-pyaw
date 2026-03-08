@@ -336,6 +336,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const pendingRemoteIceCandidatesRef = useRef([]);
   const connectionLossTimerRef = useRef(null);
   const hasConnectedOnceRef = useRef(false);
+  const reconnectRetryTimerRef = useRef(null);
+  const reconnectAttemptCountRef = useRef(0);
+  const isRestartingIceRef = useRef(false);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
@@ -435,6 +438,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       window.clearTimeout(connectionLossTimerRef.current);
       connectionLossTimerRef.current = null;
     }
+    if (reconnectRetryTimerRef.current) {
+      window.clearInterval(reconnectRetryTimerRef.current);
+      reconnectRetryTimerRef.current = null;
+    }
+    reconnectAttemptCountRef.current = 0;
+    isRestartingIceRef.current = false;
     const peerConnection = peerConnectionRef.current;
     if (!peerConnection) {
       return;
@@ -475,6 +484,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     clearVideoRequestTimer();
     pendingRemoteIceCandidatesRef.current = [];
     hasConnectedOnceRef.current = false;
+    reconnectAttemptCountRef.current = 0;
+    isRestartingIceRef.current = false;
     closePeerConnection();
     stopMediaTracks(localStreamRef.current);
     stopMediaTracks(remoteStreamRef.current);
@@ -503,6 +514,31 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       }
     }
   }, []);
+
+  const restartIceConnection = useCallback(async () => {
+    const peerConnection = peerConnectionRef.current;
+    if (!peerConnection) {
+      return;
+    }
+    if (peerConnection.signalingState !== 'stable') {
+      return;
+    }
+    if (isRestartingIceRef.current) {
+      return;
+    }
+    isRestartingIceRef.current = true;
+    try {
+      const restartOffer = await peerConnection.createOffer({ iceRestart: true });
+      await peerConnection.setLocalDescription(restartOffer);
+      publishVideoSignal({
+        type: 'webrtc-offer',
+        sdp: restartOffer,
+      });
+    } catch {
+    } finally {
+      isRestartingIceRef.current = false;
+    }
+  }, [publishVideoSignal]);
 
   const handleEndVideoCall = useCallback(
     shouldNotifyPeer => {
@@ -563,6 +599,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         remoteStreamRef.current = stream;
         setRemoteMediaStream(stream);
         hasConnectedOnceRef.current = true;
+        if (connectionLossTimerRef.current) {
+          window.clearTimeout(connectionLossTimerRef.current);
+          connectionLossTimerRef.current = null;
+        }
+        if (reconnectRetryTimerRef.current) {
+          window.clearInterval(reconnectRetryTimerRef.current);
+          reconnectRetryTimerRef.current = null;
+        }
+        reconnectAttemptCountRef.current = 0;
         return;
       }
       const incomingTrack = event.track;
@@ -574,7 +619,25 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       }
       remoteStreamRef.current.addTrack(incomingTrack);
       setRemoteMediaStream(remoteStreamRef.current);
+      incomingTrack.onunmute = () => {
+        if (!remoteStreamRef.current) {
+          remoteStreamRef.current = new MediaStream();
+        }
+        if (!remoteStreamRef.current.getTracks().includes(incomingTrack)) {
+          remoteStreamRef.current.addTrack(incomingTrack);
+        }
+        setRemoteMediaStream(remoteStreamRef.current);
+      };
       hasConnectedOnceRef.current = true;
+      if (connectionLossTimerRef.current) {
+        window.clearTimeout(connectionLossTimerRef.current);
+        connectionLossTimerRef.current = null;
+      }
+      if (reconnectRetryTimerRef.current) {
+        window.clearInterval(reconnectRetryTimerRef.current);
+        reconnectRetryTimerRef.current = null;
+      }
+      reconnectAttemptCountRef.current = 0;
     };
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
@@ -584,20 +647,44 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           window.clearTimeout(connectionLossTimerRef.current);
           connectionLossTimerRef.current = null;
         }
+        if (reconnectRetryTimerRef.current) {
+          window.clearInterval(reconnectRetryTimerRef.current);
+          reconnectRetryTimerRef.current = null;
+        }
+        reconnectAttemptCountRef.current = 0;
         return;
       }
-      if (state === 'failed' || state === 'closed') {
+      if (state === 'closed') {
         resetVideoCallState();
         return;
       }
-      if (state === 'disconnected' && hasConnectedOnceRef.current && !connectionLossTimerRef.current) {
-        connectionLossTimerRef.current = window.setTimeout(() => {
-          connectionLossTimerRef.current = null;
-          const currentState = peerConnection.connectionState;
-          if (currentState === 'disconnected' || currentState === 'failed' || currentState === 'closed') {
-            resetVideoCallState();
-          }
-        }, 20000);
+      if ((state === 'disconnected' || state === 'failed') && hasConnectedOnceRef.current) {
+        if (!connectionLossTimerRef.current) {
+          connectionLossTimerRef.current = window.setTimeout(() => {
+            connectionLossTimerRef.current = null;
+            const currentState = peerConnection.connectionState;
+            if (currentState === 'disconnected' || currentState === 'failed' || currentState === 'closed') {
+              resetVideoCallState();
+            }
+          }, 45000);
+        }
+        if (!reconnectRetryTimerRef.current) {
+          reconnectRetryTimerRef.current = window.setInterval(() => {
+            if (peerConnection.connectionState === 'connected') {
+              window.clearInterval(reconnectRetryTimerRef.current);
+              reconnectRetryTimerRef.current = null;
+              reconnectAttemptCountRef.current = 0;
+              return;
+            }
+            if (reconnectAttemptCountRef.current >= 6) {
+              window.clearInterval(reconnectRetryTimerRef.current);
+              reconnectRetryTimerRef.current = null;
+              return;
+            }
+            reconnectAttemptCountRef.current += 1;
+            void restartIceConnection();
+          }, 5000);
+        }
       }
     };
     peerConnection.oniceconnectionstatechange = () => {
@@ -608,38 +695,20 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           window.clearTimeout(connectionLossTimerRef.current);
           connectionLossTimerRef.current = null;
         }
+        if (reconnectRetryTimerRef.current) {
+          window.clearInterval(reconnectRetryTimerRef.current);
+          reconnectRetryTimerRef.current = null;
+        }
+        reconnectAttemptCountRef.current = 0;
       }
     };
     const stream = await ensureLocalMediaStream();
     stream.getTracks().forEach(track => {
       peerConnection.addTrack(track, stream);
     });
-    peerConnection.getSenders().forEach(sender => {
-      if (!sender.track || sender.track.kind !== 'video' || typeof sender.getParameters !== 'function') {
-        return;
-      }
-      const currentParams = sender.getParameters();
-      const encoding = currentParams.encodings && currentParams.encodings[0]
-        ? currentParams.encodings[0]
-        : {};
-      const nextParams = {
-        ...currentParams,
-        encodings: [
-          {
-            ...encoding,
-            maxBitrate: 800000,
-            maxFramerate: 30,
-          },
-        ],
-        degradationPreference: 'maintain-framerate',
-      };
-      if (typeof sender.setParameters === 'function') {
-        sender.setParameters(nextParams).catch(() => {});
-      }
-    });
     peerConnectionRef.current = peerConnection;
     return peerConnection;
-  }, [ensureLocalMediaStream, publishVideoSignal, resetVideoCallState]);
+  }, [ensureLocalMediaStream, publishVideoSignal, resetVideoCallState, restartIceConnection]);
 
   const handleStartVideoOffer = useCallback(async () => {
     try {
