@@ -339,6 +339,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const reconnectRetryTimerRef = useRef(null);
   const reconnectAttemptCountRef = useRef(0);
   const isRestartingIceRef = useRef(false);
+  const makingOfferRef = useRef(false);
+  const ignoreOfferRef = useRef(false);
+  const isPolitePeerRef = useRef(role !== 'host');
   const senderQualityMonitorTimerRef = useRef(null);
   const senderQualityProfileRef = useRef('balanced');
   const localVideoRef = useRef(null);
@@ -487,6 +490,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     isVideoRequestPendingRef.current = isVideoRequestPending;
   }, [isVideoRequestPending]);
 
+  useEffect(() => {
+    isPolitePeerRef.current = role !== 'host';
+  }, [role]);
+
   const resetVideoCallState = useCallback(() => {
     clearVideoRequestTimer();
     pendingRemoteIceCandidatesRef.current = [];
@@ -494,6 +501,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     senderQualityProfileRef.current = 'balanced';
     reconnectAttemptCountRef.current = 0;
     isRestartingIceRef.current = false;
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
     closePeerConnection();
     stopMediaTracks(localStreamRef.current);
     stopMediaTracks(remoteStreamRef.current);
@@ -535,6 +544,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       return;
     }
     isRestartingIceRef.current = true;
+    makingOfferRef.current = true;
     try {
       const restartOffer = await peerConnection.createOffer({ iceRestart: true });
       await peerConnection.setLocalDescription(restartOffer);
@@ -544,6 +554,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       });
     } catch {
     } finally {
+      makingOfferRef.current = false;
       isRestartingIceRef.current = false;
     }
   }, [publishVideoSignal]);
@@ -816,6 +827,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       setTransportError('');
       setIsVideoCallActive(true);
       const peerConnection = await ensurePeerConnection();
+      makingOfferRef.current = true;
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       publishVideoSignal({
@@ -826,6 +838,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     } catch (error) {
       resetVideoCallState();
       setTransportError(error.message || 'Unable to start video call.');
+    } finally {
+      makingOfferRef.current = false;
     }
   }, [ensurePeerConnection, publishVideoSignal, resetVideoCallState]);
 
@@ -838,7 +852,22 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         setTransportError('');
         setIsVideoCallActive(true);
         const peerConnection = await ensurePeerConnection();
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        const incomingDescription = new RTCSessionDescription(payload.sdp);
+        const offerCollision =
+          incomingDescription.type === 'offer' &&
+          (makingOfferRef.current || peerConnection.signalingState !== 'stable');
+        ignoreOfferRef.current = !isPolitePeerRef.current && offerCollision;
+        if (ignoreOfferRef.current) {
+          return;
+        }
+        if (offerCollision && peerConnection.signalingState === 'have-local-offer') {
+          await Promise.all([
+            peerConnection.setLocalDescription({ type: 'rollback' }),
+            peerConnection.setRemoteDescription(incomingDescription),
+          ]);
+        } else {
+          await peerConnection.setRemoteDescription(incomingDescription);
+        }
         await flushPendingRemoteIceCandidates(peerConnection);
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
@@ -861,6 +890,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       }
       const peerConnection = peerConnectionRef.current;
       if (!peerConnection) {
+        return;
+      }
+      if (peerConnection.signalingState !== 'have-local-offer') {
         return;
       }
       try {
