@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/pyaw-pyaw/static/css/main.830c3257.css",
-    "main.js": "/pyaw-pyaw/static/js/main.2ac761cb.js",
+    "main.css": "/pyaw-pyaw/static/css/main.ac4eb1f1.css",
+    "main.js": "/pyaw-pyaw/static/js/main.53ef600c.js",
     "static/js/453.ac36b75c.chunk.js": "/pyaw-pyaw/static/js/453.ac36b75c.chunk.js",
     "index.html": "/pyaw-pyaw/index.html",
-    "main.830c3257.css.map": "/pyaw-pyaw/static/css/main.830c3257.css.map",
-    "main.2ac761cb.js.map": "/pyaw-pyaw/static/js/main.2ac761cb.js.map",
+    "main.ac4eb1f1.css.map": "/pyaw-pyaw/static/css/main.ac4eb1f1.css.map",
+    "main.53ef600c.js.map": "/pyaw-pyaw/static/js/main.53ef600c.js.map",
     "453.ac36b75c.chunk.js.map": "/pyaw-pyaw/static/js/453.ac36b75c.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.830c3257.css",
-    "static/js/main.2ac761cb.js"
+    "static/css/main.ac4eb1f1.css",
+    "static/js/main.53ef600c.js"
   ]
 }
