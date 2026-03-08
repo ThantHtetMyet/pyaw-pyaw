@@ -1163,8 +1163,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const receiverFlagSource = getCountryFlagSource(receiverCountryCode);
   const senderCountryName = getCountryName(senderCountryCode) || 'Unknown country';
   const receiverCountryName = getCountryName(receiverCountryCode) || 'Unknown country';
-  const showReceiverCard = !isHostRole || isPeerJoined;
   const kickoutTargetName = peerName || receiverName || 'Client';
+  const hostName = isHostRole ? senderName : receiverName;
+  const clientName = isHostRole ? receiverName : senderName;
+  const hostCountryName = isHostRole ? senderCountryName : receiverCountryName;
+  const clientCountryName = isHostRole ? receiverCountryName : senderCountryName;
+  const hostFlagSource = isHostRole ? senderFlagSource : receiverFlagSource;
+  const clientFlagSource = isHostRole ? receiverFlagSource : senderFlagSource;
+  const isClientJoined = !isHostRole || isPeerJoined;
 
   return (
     <div className="room-tab-page">
@@ -1186,32 +1192,42 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
               {isHostRole ? 'Kill room' : 'Exit'}
             </button>
           </div>
-          <div className="room-user-row">
-            {showReceiverCard && (
-              <div className="room-user-card left">
+          <div className="room-user-list">
+            <div className="room-user-row">
+              <span className="room-user-label">Host:</span>
+              <div className="room-user-card">
                 <div className="room-user-flag-stack">
-                  {receiverFlagSource ? (
-                    <img className="room-user-flag-img" src={receiverFlagSource} alt="Receiver flag" />
+                  {hostFlagSource ? (
+                    <img className="room-user-flag-img" src={hostFlagSource} alt="Host flag" />
                   ) : (
                     <span className="room-user-flag">🏳️</span>
                   )}
-                  <span className="room-user-country">{receiverCountryName}</span>
+                  <span className="room-user-country">{hostCountryName}</span>
                 </div>
                 <span className="room-user-divider" aria-hidden="true" />
-                <span className="room-user-name">{receiverName}</span>
+                <span className="room-user-name">{hostName}</span>
               </div>
-            )}
-            <div className="room-user-card right">
-              <div className="room-user-flag-stack">
-                {senderFlagSource ? (
-                  <img className="room-user-flag-img" src={senderFlagSource} alt="Sender flag" />
+            </div>
+            <div className="room-user-row">
+              <span className="room-user-label">Client:</span>
+              <div className="room-user-card">
+                {isClientJoined ? (
+                  <>
+                    <div className="room-user-flag-stack">
+                      {clientFlagSource ? (
+                        <img className="room-user-flag-img" src={clientFlagSource} alt="Client flag" />
+                      ) : (
+                        <span className="room-user-flag">🏳️</span>
+                      )}
+                      <span className="room-user-country">{clientCountryName}</span>
+                    </div>
+                    <span className="room-user-divider" aria-hidden="true" />
+                    <span className="room-user-name">{clientName}</span>
+                  </>
                 ) : (
-                  <span className="room-user-flag">🏳️</span>
+                  <span className="room-user-empty-field" aria-hidden="true" />
                 )}
-                <span className="room-user-country">{senderCountryName}</span>
               </div>
-              <span className="room-user-divider" aria-hidden="true" />
-              <span className="room-user-name">{senderName}</span>
             </div>
           </div>
         </div>
