@@ -1,5 +1,5 @@
 import mqtt from 'mqtt';
-import Peer from 'simple-peer';
+import Peer from 'peerjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
@@ -326,6 +326,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const currentVideoRequestIdRef = useRef('');
   const incomingVideoRequestIdRef = useRef('');
   const incomingVideoRequestTimerRef = useRef(null);
+  const peerClientRef = useRef(null);
+  const peerReadyPromiseRef = useRef(null);
+  const remotePeerClientIdRef = useRef('');
   const videoSignalHandlersRef = useRef({
     publishVideoSignal: () => {},
     clearVideoRequestTimer: () => {},
@@ -339,17 +342,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
-  const pendingRemoteIceCandidatesRef = useRef([]);
-  const connectionLossTimerRef = useRef(null);
-  const hasConnectedOnceRef = useRef(false);
-  const reconnectRetryTimerRef = useRef(null);
-  const reconnectAttemptCountRef = useRef(0);
-  const isRestartingIceRef = useRef(false);
-  const makingOfferRef = useRef(false);
-  const ignoreOfferRef = useRef(false);
-  const isPolitePeerRef = useRef(role !== 'host');
-  const senderQualityMonitorTimerRef = useRef(null);
-  const senderQualityProfileRef = useRef('balanced');
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
@@ -445,30 +437,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   );
 
   const closePeerConnection = useCallback(() => {
-    if (connectionLossTimerRef.current) {
-      window.clearTimeout(connectionLossTimerRef.current);
-      connectionLossTimerRef.current = null;
-    }
-    if (reconnectRetryTimerRef.current) {
-      window.clearInterval(reconnectRetryTimerRef.current);
-      reconnectRetryTimerRef.current = null;
-    }
-    if (senderQualityMonitorTimerRef.current) {
-      window.clearInterval(senderQualityMonitorTimerRef.current);
-      senderQualityMonitorTimerRef.current = null;
-    }
-    senderQualityProfileRef.current = 'balanced';
-    reconnectAttemptCountRef.current = 0;
-    isRestartingIceRef.current = false;
     const peerConnection = peerConnectionRef.current;
     if (!peerConnection) {
       return;
     }
-    if (typeof peerConnection.removeAllListeners === 'function') {
-      peerConnection.removeAllListeners();
+    if (typeof peerConnection.off === 'function') {
+      peerConnection.off();
     }
-    if (typeof peerConnection.destroy === 'function') {
-      peerConnection.destroy();
+    if (typeof peerConnection.close === 'function') {
+      peerConnection.close();
     }
     peerConnectionRef.current = null;
   }, []);
@@ -505,22 +482,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     isVideoRequestPendingRef.current = isVideoRequestPending;
   }, [isVideoRequestPending]);
 
-  useEffect(() => {
-    isPolitePeerRef.current = role !== 'host';
-  }, [role]);
-
   const resetVideoCallState = useCallback(() => {
     clearVideoRequestTimer();
     clearIncomingVideoRequestTimer();
-    pendingRemoteIceCandidatesRef.current = [];
     currentVideoRequestIdRef.current = '';
     incomingVideoRequestIdRef.current = '';
-    hasConnectedOnceRef.current = false;
-    senderQualityProfileRef.current = 'balanced';
-    reconnectAttemptCountRef.current = 0;
-    isRestartingIceRef.current = false;
-    makingOfferRef.current = false;
-    ignoreOfferRef.current = false;
     closePeerConnection();
     stopMediaTracks(localStreamRef.current);
     stopMediaTracks(remoteStreamRef.current);
@@ -532,108 +498,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     setIsVideoRequestPending(false);
     setIsVideoRequestModalOpen(false);
   }, [clearIncomingVideoRequestTimer, clearVideoRequestTimer, closePeerConnection]);
-
-  const resolveRtcConnection = useCallback(() => {
-    const peer = peerConnectionRef.current;
-    if (!peer || typeof peer !== 'object') {
-      return null;
-    }
-    if (peer._pc && typeof peer._pc.getSenders === 'function') {
-      return peer._pc;
-    }
-    return null;
-  }, []);
-
-  const applyVideoSenderProfile = useCallback(async profile => {
-    const peerConnection = resolveRtcConnection();
-    if (!peerConnection) {
-      return;
-    }
-    const senderProfile = profile === 'low'
-      ? { maxBitrate: 220000, maxFramerate: 12, scaleResolutionDownBy: 1.6 }
-      : profile === 'high'
-        ? { maxBitrate: 700000, maxFramerate: 24, scaleResolutionDownBy: 1 }
-        : { maxBitrate: 420000, maxFramerate: 18, scaleResolutionDownBy: 1.25 };
-    const videoSenders = peerConnection.getSenders().filter(sender => sender.track?.kind === 'video');
-    await Promise.all(
-      videoSenders.map(async sender => {
-        if (typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') {
-          return;
-        }
-        const currentParams = sender.getParameters();
-        const currentEncoding = currentParams.encodings && currentParams.encodings[0]
-          ? currentParams.encodings[0]
-          : {};
-        const nextParams = {
-          ...currentParams,
-          encodings: [
-            {
-              ...currentEncoding,
-              maxBitrate: senderProfile.maxBitrate,
-              maxFramerate: senderProfile.maxFramerate,
-              scaleResolutionDownBy: senderProfile.scaleResolutionDownBy,
-            },
-          ],
-          degradationPreference: 'maintain-framerate',
-        };
-        try {
-          await sender.setParameters(nextParams);
-        } catch {
-        }
-      })
-    );
-    senderQualityProfileRef.current = profile;
-  }, [resolveRtcConnection]);
-
-  const startSenderQualityMonitor = useCallback(() => {
-    const peerConnection = resolveRtcConnection();
-    if (!peerConnection) {
-      return;
-    }
-    if (senderQualityMonitorTimerRef.current) {
-      return;
-    }
-    senderQualityMonitorTimerRef.current = window.setInterval(async () => {
-      const currentPeerConnection = resolveRtcConnection();
-      if (!currentPeerConnection || currentPeerConnection.connectionState !== 'connected') {
-        return;
-      }
-      const videoSender = currentPeerConnection.getSenders().find(sender => sender.track?.kind === 'video');
-      if (!videoSender) {
-        return;
-      }
-      try {
-        const stats = await videoSender.getStats();
-        let outboundReport = null;
-        let selectedPair = null;
-        stats.forEach(report => {
-          if (!outboundReport && report.type === 'outbound-rtp' && report.kind === 'video' && !report.isRemote) {
-            outboundReport = report;
-          }
-          if (!selectedPair && report.type === 'candidate-pair' && report.nominated) {
-            selectedPair = report;
-          }
-        });
-        if (!outboundReport) {
-          return;
-        }
-        const bitrateKbps = Number.isFinite(outboundReport.bitrateMean)
-          ? outboundReport.bitrateMean / 1000
-          : Number.isFinite(outboundReport.bytesSent) && Number.isFinite(outboundReport.timestamp)
-            ? outboundReport.bytesSent / Math.max(1, outboundReport.timestamp / 1000)
-            : 0;
-        const rttSeconds = Number.isFinite(selectedPair?.currentRoundTripTime) ? selectedPair.currentRoundTripTime : 0;
-        const outboundFps = Number.isFinite(outboundReport.framesPerSecond) ? outboundReport.framesPerSecond : 0;
-        const shouldUseLowProfile = rttSeconds > 0.85 || bitrateKbps < 180 || outboundFps < 12;
-        const shouldUseBalancedProfile = rttSeconds > 0.45 || bitrateKbps < 320 || outboundFps < 18;
-        const nextProfile = shouldUseLowProfile ? 'low' : shouldUseBalancedProfile ? 'balanced' : 'high';
-        if (nextProfile !== senderQualityProfileRef.current) {
-          await applyVideoSenderProfile(nextProfile);
-        }
-      } catch {
-      }
-    }, 5000);
-  }, [applyVideoSenderProfile, resolveRtcConnection]);
 
   const handleEndVideoCall = useCallback(
     shouldNotifyPeer => {
@@ -674,150 +538,131 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     return stream;
   }, []);
 
+  const bindPeerConnection = useCallback(
+    mediaConnection => {
+      closePeerConnection();
+      peerConnectionRef.current = mediaConnection;
+      mediaConnection.on('stream', streamData => {
+        remoteStreamRef.current = streamData;
+        setRemoteMediaStream(streamData);
+      });
+      mediaConnection.on('close', () => {
+        if (!isVideoCallActiveRef.current) {
+          return;
+        }
+        resetVideoCallState();
+      });
+      mediaConnection.on('error', error => {
+        if (!isVideoCallActiveRef.current) {
+          return;
+        }
+        setTransportError(error?.message || 'Video call transport error.');
+        resetVideoCallState();
+      });
+    },
+    [closePeerConnection, resetVideoCallState]
+  );
+
+  const ensurePeerClient = useCallback(async () => {
+    if (peerClientRef.current && !peerClientRef.current.destroyed && peerClientRef.current.open) {
+      return peerClientRef.current;
+    }
+    if (peerReadyPromiseRef.current) {
+      return peerReadyPromiseRef.current;
+    }
+    peerReadyPromiseRef.current = new Promise((resolve, reject) => {
+      const peerClient = new Peer(clientIdRef.current, { config: { iceServers: VIDEO_ICE_SERVERS } });
+      let hasOpened = false;
+      peerClient.on('open', () => {
+        hasOpened = true;
+        peerClientRef.current = peerClient;
+        resolve(peerClient);
+      });
+      peerClient.on('call', async mediaConnection => {
+        if (!isVideoCallActiveRef.current) {
+          mediaConnection.close();
+          return;
+        }
+        try {
+          const stream = await ensureLocalMediaStream();
+          bindPeerConnection(mediaConnection);
+          mediaConnection.answer(stream);
+        } catch (error) {
+          mediaConnection.close();
+          setTransportError(error?.message || 'Unable to answer video call.');
+          resetVideoCallState();
+        }
+      });
+      peerClient.on('error', error => {
+        if (hasOpened) {
+          setTransportError(error?.message || 'Video call transport error.');
+          if (isVideoCallActiveRef.current) {
+            resetVideoCallState();
+          }
+          return;
+        }
+        reject(error);
+      });
+      peerClient.on('close', () => {
+        peerClientRef.current = null;
+      });
+    })
+      .finally(() => {
+        peerReadyPromiseRef.current = null;
+      });
+    return peerReadyPromiseRef.current;
+  }, [bindPeerConnection, ensureLocalMediaStream, resetVideoCallState]);
+
+  useEffect(() => {
+    void ensurePeerClient().catch(() => {});
+    return () => {
+      if (peerClientRef.current && !peerClientRef.current.destroyed) {
+        peerClientRef.current.destroy();
+      }
+      peerClientRef.current = null;
+    };
+  }, [ensurePeerClient]);
+
   const ensurePeerConnection = useCallback(async (isInitiator = false) => {
     if (peerConnectionRef.current) {
       return peerConnectionRef.current;
     }
-    const stream = await ensureLocalMediaStream();
-    const peerConnection = new Peer({
-      initiator: isInitiator,
-      trickle: true,
-      stream,
-      config: { iceServers: VIDEO_ICE_SERVERS },
-    });
-    peerConnection.on('signal', signalData => {
-      publishVideoSignal({
-        type: 'webrtc-signal',
-        signal: signalData,
-      });
-    });
-    peerConnection.on('stream', streamData => {
-      remoteStreamRef.current = streamData;
-      setRemoteMediaStream(streamData);
-      hasConnectedOnceRef.current = true;
-      if (connectionLossTimerRef.current) {
-        window.clearTimeout(connectionLossTimerRef.current);
-        connectionLossTimerRef.current = null;
-      }
-      if (reconnectRetryTimerRef.current) {
-        window.clearInterval(reconnectRetryTimerRef.current);
-        reconnectRetryTimerRef.current = null;
-      }
-      reconnectAttemptCountRef.current = 0;
-    });
-    peerConnection.on('connect', () => {
-      hasConnectedOnceRef.current = true;
-      startSenderQualityMonitor();
-      void applyVideoSenderProfile('balanced');
-      if (connectionLossTimerRef.current) {
-        window.clearTimeout(connectionLossTimerRef.current);
-        connectionLossTimerRef.current = null;
-      }
-      if (reconnectRetryTimerRef.current) {
-        window.clearInterval(reconnectRetryTimerRef.current);
-        reconnectRetryTimerRef.current = null;
-      }
-      reconnectAttemptCountRef.current = 0;
-    });
-    peerConnection.on('close', () => {
-      if (!isVideoCallActiveRef.current) {
-        return;
-      }
-      if (hasConnectedOnceRef.current) {
-        if (!connectionLossTimerRef.current) {
-          connectionLossTimerRef.current = window.setTimeout(() => {
-            connectionLossTimerRef.current = null;
-            if (isVideoCallActiveRef.current) {
-              resetVideoCallState();
-            }
-          }, 45000);
-        }
-        return;
-      }
-      resetVideoCallState();
-    });
-    peerConnection.on('error', error => {
-      if (!isVideoCallActiveRef.current) {
-        return;
-      }
-      setTransportError(error?.message || 'Video call transport error.');
-    });
-    peerConnectionRef.current = peerConnection;
-    const queuedSignals = pendingRemoteIceCandidatesRef.current;
-    if (queuedSignals.length) {
-      pendingRemoteIceCandidatesRef.current = [];
-      queuedSignals.forEach(queuedSignal => {
-        try {
-          peerConnection.signal(queuedSignal);
-        } catch {
-        }
-      });
+    if (!isInitiator) {
+      return null;
     }
-    return peerConnection;
-  }, [applyVideoSenderProfile, ensureLocalMediaStream, publishVideoSignal, resetVideoCallState, startSenderQualityMonitor]);
+    const remotePeerId = remotePeerClientIdRef.current;
+    if (!remotePeerId) {
+      throw new Error('Peer is not ready for video call.');
+    }
+    const peerClient = await ensurePeerClient();
+    const stream = await ensureLocalMediaStream();
+    const mediaConnection = peerClient.call(remotePeerId, stream);
+    bindPeerConnection(mediaConnection);
+    return mediaConnection;
+  }, [bindPeerConnection, ensureLocalMediaStream, ensurePeerClient]);
 
   const handleStartVideoOffer = useCallback(async () => {
     try {
       setTransportError('');
       setIsVideoCallActive(true);
       await ensurePeerConnection(true);
-      makingOfferRef.current = true;
       addMessage('System', 'Video call started.', { type: 'system' });
     } catch (error) {
       resetVideoCallState();
       setTransportError(error.message || 'Unable to start video call.');
-    } finally {
-      makingOfferRef.current = false;
     }
   }, [ensurePeerConnection, resetVideoCallState]);
 
   const handleIncomingWebrtcSignal = useCallback(
-    async payload => {
-      const signalData = payload?.signal || payload?.sdp || payload?.candidate;
-      if (!signalData || typeof signalData !== 'object') {
-        return;
-      }
-      try {
-        setTransportError('');
-        setIsVideoCallActive(true);
-        const isOfferSignal = signalData.type === 'offer';
-        const isAnswerSignal = signalData.type === 'answer';
-        let peerConnection = peerConnectionRef.current;
-        if (!peerConnection) {
-          if (!isOfferSignal && !isAnswerSignal) {
-            pendingRemoteIceCandidatesRef.current = [...pendingRemoteIceCandidatesRef.current, signalData].slice(-40);
-            return;
-          }
-          peerConnection = await ensurePeerConnection(false);
-        }
-        peerConnection.signal(signalData);
-      } catch (error) {
-        setTransportError(error.message || 'Unable to sync video signal.');
-      }
-    },
-    [ensurePeerConnection]
+    async () => {},
+    []
   );
 
-  const handleIncomingVideoOffer = useCallback(async payload => {
-    if (!payload?.sdp) {
-      return;
-    }
-    await handleIncomingWebrtcSignal({ signal: payload.sdp });
-  }, [handleIncomingWebrtcSignal]);
+  const handleIncomingVideoOffer = useCallback(async () => {}, []);
 
-  const handleIncomingVideoAnswer = useCallback(async payload => {
-    if (!payload?.sdp) {
-      return;
-    }
-    await handleIncomingWebrtcSignal({ signal: payload.sdp });
-  }, [handleIncomingWebrtcSignal]);
+  const handleIncomingVideoAnswer = useCallback(async () => {}, []);
 
-  const handleIncomingVideoIceCandidate = useCallback(async payload => {
-    if (!payload?.candidate) {
-      return;
-    }
-    await handleIncomingWebrtcSignal({ signal: payload.candidate });
-  }, [handleIncomingWebrtcSignal]);
+  const handleIncomingVideoIceCandidate = useCallback(async () => {}, []);
 
   videoSignalHandlersRef.current.publishVideoSignal = publishVideoSignal;
   videoSignalHandlersRef.current.clearVideoRequestTimer = clearVideoRequestTimer;
@@ -999,7 +844,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     payload => {
       const senderName = typeof payload?.senderName === 'string' ? payload.senderName.trim() : '';
       const senderCountry = typeof payload?.senderCountry === 'string' ? payload.senderCountry.trim().toUpperCase() : '';
+      const senderId = typeof payload?.senderId === 'string'
+        ? payload.senderId
+        : typeof payload?.clientId === 'string'
+          ? payload.clientId
+          : '';
       if (isHostRole && payload?.senderRole === 'guest') {
+        if (senderId && senderId !== clientIdRef.current) {
+          remotePeerClientIdRef.current = senderId;
+        }
         if (senderName) {
           setPeerName(senderName);
         }
@@ -1008,6 +861,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         }
       }
       if (!isHostRole && payload?.senderRole === 'host') {
+        if (senderId && senderId !== clientIdRef.current) {
+          remotePeerClientIdRef.current = senderId;
+        }
         if (senderName) {
           setPeerName(senderName);
         }
