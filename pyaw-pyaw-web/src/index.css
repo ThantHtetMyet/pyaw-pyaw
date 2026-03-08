@@ -1325,6 +1325,8 @@ code {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
+  min-width: 0;
+  max-width: calc(50% - 7px);
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.24);
   background: rgba(8, 10, 15, 0.38);
@@ -1337,6 +1339,7 @@ code {
   flex-direction: column;
   align-items: center;
   gap: 3px;
+  flex-shrink: 0;
 }
 
 .room-user-card.right {
@@ -1363,6 +1366,12 @@ code {
 }
 
 .room-user-name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #ffffff;
   font-weight: 700;
 }
@@ -1560,6 +1569,10 @@ code {
   letter-spacing: 0.02em;
   color: rgba(219, 232, 255, 0.9);
   padding: 0 2px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-message-item.own .chat-message-meta {

@@ -741,6 +741,17 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
           if (messageTopic.endsWith('/chat')) {
             if (payload?.type === 'kill') {
+              if (!isHostRole) {
+                setIsComposeModalOpen(false);
+                setInputValue('');
+                const exitPayload = { refreshRooms: true, terminatedByHost: true, topic, role };
+                if (typeof onExit === 'function') {
+                  onExit(exitPayload);
+                } else {
+                  notifyMapAndClose(exitPayload);
+                }
+                return;
+              }
               setIsRoomKilled(true);
               setShowChatInterface(true);
               addMessage('System', payload?.text || 'Host ended this chat.', { type: 'system' });
@@ -1042,6 +1053,25 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           guestMismatchCountRef.current = 0;
           return;
         }
+        if (!room) {
+          hasHandledKickoutRef.current = true;
+          setIsComposeModalOpen(false);
+          setInputValue('');
+          const isSessionExpired = Date.now() >= currentSessionExpiresAtRef.current;
+          const exitPayload = {
+            refreshRooms: true,
+            terminatedByHost: !isSessionExpired,
+            topic,
+            role,
+            expired: isSessionExpired,
+          };
+          if (typeof onExit === 'function') {
+            onExit(exitPayload);
+          } else {
+            notifyMapAndClose(exitPayload);
+          }
+          return;
+        }
         if (!hasConfirmedGuestOwnershipRef.current) {
           return;
         }
@@ -1052,7 +1082,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         hasHandledKickoutRef.current = true;
         setIsComposeModalOpen(false);
         setInputValue('');
-        const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, kickedOut: true };
+        const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, role, kickedOut: true };
         if (typeof onExit === 'function') {
           onExit(exitPayload);
         } else {
@@ -1067,7 +1097,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [isHostRole, notifyMapAndClose, onExit, topic]);
+  }, [isHostRole, notifyMapAndClose, onExit, role, topic]);
 
   const handleExitChat = async () => {
     const isHost = isHostRole;
@@ -1110,7 +1140,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       emitRoomActivityEvent({ type: 'terminated', topic });
     }
     mqttClientRef.current?.end(true);
-    const exitPayload = { refreshRooms: true, terminatedByHost: isHost, topic };
+    const exitPayload = { refreshRooms: true, terminatedByHost: isHost, topic, role };
     if (typeof onExit === 'function') {
       onExit(exitPayload);
       return;
@@ -1690,6 +1720,20 @@ function App() {
     }
   }, []);
 
+  const getExitMessage = useCallback(payload => {
+    const role = payload?.role === 'host' ? 'host' : 'guest';
+    if (payload?.kickedOut && role === 'guest') {
+      return 'You were kicked out by host.';
+    }
+    if (payload?.terminatedByHost && role === 'guest') {
+      return 'Host ended the room.';
+    }
+    if (payload?.expired && role === 'guest') {
+      return 'Session expired. Please create or join a new room.';
+    }
+    return '';
+  }, []);
+
   const handleExitChatRoom = useCallback(
     payload => {
       setActiveChatRoom(null);
@@ -1705,14 +1749,17 @@ function App() {
         if (payload?.topic) {
           blockKickedTopic(payload.topic);
         }
-        setModalMessage('You were kicked out by host.');
       }
       if (payload?.terminatedByHost) {
         hideRoomTopic(payload?.topic);
       }
+      const exitMessage = getExitMessage(payload);
+      if (exitMessage) {
+        setModalMessage(exitMessage);
+      }
       refreshRoomsSilently().catch(() => {});
     },
-    [blockKickedTopic, hideRoomTopic, refreshRoomsSilently]
+    [blockKickedTopic, getExitMessage, hideRoomTopic, refreshRoomsSilently]
   );
 
   const handleLocate = position => {
@@ -1746,12 +1793,15 @@ function App() {
         if (event.data?.topic) {
           blockKickedTopic(event.data.topic);
         }
-        setModalMessage('You were kicked out by host.');
       }
       if (event.data?.terminatedByHost) {
         hideRoomTopic(event.data?.topic);
         setHostRoomTopic('');
         window.localStorage.removeItem('pyaw-pyaw-active-room');
+      }
+      const exitMessage = getExitMessage(event.data);
+      if (exitMessage) {
+        setModalMessage(exitMessage);
       }
       if (event.data?.topic) {
         setActiveChatRoom(prev => (prev?.topic === event.data.topic ? null : prev));
@@ -1762,7 +1812,7 @@ function App() {
     return () => {
       window.removeEventListener('message', handleRoomExitMessage);
     };
-  }, [blockKickedTopic, hideRoomTopic, refreshRoomsSilently]);
+  }, [blockKickedTopic, getExitMessage, hideRoomTopic, refreshRoomsSilently]);
 
   useEffect(() => {
     const handleStorage = event => {
