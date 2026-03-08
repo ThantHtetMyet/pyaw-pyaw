@@ -335,6 +335,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const remoteStreamRef = useRef(null);
   const pendingRemoteIceCandidatesRef = useRef([]);
   const connectionLossTimerRef = useRef(null);
+  const hasConnectedOnceRef = useRef(false);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
@@ -473,6 +474,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const resetVideoCallState = useCallback(() => {
     clearVideoRequestTimer();
     pendingRemoteIceCandidatesRef.current = [];
+    hasConnectedOnceRef.current = false;
     closePeerConnection();
     stopMediaTracks(localStreamRef.current);
     stopMediaTracks(remoteStreamRef.current);
@@ -557,15 +559,27 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     };
     peerConnection.ontrack = event => {
       const [stream] = event.streams || [];
-      if (!stream) {
+      if (stream) {
+        remoteStreamRef.current = stream;
+        setRemoteMediaStream(stream);
+        hasConnectedOnceRef.current = true;
         return;
       }
-      remoteStreamRef.current = stream;
-      setRemoteMediaStream(stream);
+      const incomingTrack = event.track;
+      if (!incomingTrack) {
+        return;
+      }
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+      remoteStreamRef.current.addTrack(incomingTrack);
+      setRemoteMediaStream(remoteStreamRef.current);
+      hasConnectedOnceRef.current = true;
     };
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
       if (state === 'connected') {
+        hasConnectedOnceRef.current = true;
         if (connectionLossTimerRef.current) {
           window.clearTimeout(connectionLossTimerRef.current);
           connectionLossTimerRef.current = null;
@@ -576,19 +590,20 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         resetVideoCallState();
         return;
       }
-      if (state === 'disconnected' && !connectionLossTimerRef.current) {
+      if (state === 'disconnected' && hasConnectedOnceRef.current && !connectionLossTimerRef.current) {
         connectionLossTimerRef.current = window.setTimeout(() => {
           connectionLossTimerRef.current = null;
           const currentState = peerConnection.connectionState;
           if (currentState === 'disconnected' || currentState === 'failed' || currentState === 'closed') {
             resetVideoCallState();
           }
-        }, 10000);
+        }, 20000);
       }
     };
     peerConnection.oniceconnectionstatechange = () => {
       const iceState = peerConnection.iceConnectionState;
       if (iceState === 'connected' || iceState === 'completed') {
+        hasConnectedOnceRef.current = true;
         if (connectionLossTimerRef.current) {
           window.clearTimeout(connectionLossTimerRef.current);
           connectionLossTimerRef.current = null;
@@ -777,20 +792,40 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!localVideoRef.current) {
       return;
     }
-    localVideoRef.current.srcObject = localMediaStream || null;
+    const localVideoElement = localVideoRef.current;
+    const resumeLocalPlayback = () => {
+      localVideoElement.play().catch(() => {});
+    };
+    localVideoElement.srcObject = localMediaStream || null;
+    localVideoElement.onloadedmetadata = resumeLocalPlayback;
+    localVideoElement.oncanplay = resumeLocalPlayback;
     if (localMediaStream) {
-      localVideoRef.current.play().catch(() => {});
+      resumeLocalPlayback();
     }
+    return () => {
+      localVideoElement.onloadedmetadata = null;
+      localVideoElement.oncanplay = null;
+    };
   }, [localMediaStream]);
 
   useEffect(() => {
     if (!remoteVideoRef.current) {
       return;
     }
-    remoteVideoRef.current.srcObject = remoteMediaStream || null;
+    const remoteVideoElement = remoteVideoRef.current;
+    const resumeRemotePlayback = () => {
+      remoteVideoElement.play().catch(() => {});
+    };
+    remoteVideoElement.srcObject = remoteMediaStream || null;
+    remoteVideoElement.onloadedmetadata = resumeRemotePlayback;
+    remoteVideoElement.oncanplay = resumeRemotePlayback;
     if (remoteMediaStream) {
-      remoteVideoRef.current.play().catch(() => {});
+      resumeRemotePlayback();
     }
+    return () => {
+      remoteVideoElement.onloadedmetadata = null;
+      remoteVideoElement.oncanplay = null;
+    };
   }, [remoteMediaStream]);
 
   useEffect(() => {
