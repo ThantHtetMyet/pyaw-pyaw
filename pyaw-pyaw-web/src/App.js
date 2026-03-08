@@ -316,6 +316,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const promptedExpiresAtRef = useRef(0);
   const hasHandledExpiredExitRef = useRef(false);
   const expireExitTimerRef = useRef(null);
+  const videoRequestTimerRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
@@ -425,7 +426,16 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     peerConnectionRef.current = null;
   }, []);
 
+  const clearVideoRequestTimer = useCallback(() => {
+    if (!videoRequestTimerRef.current) {
+      return;
+    }
+    window.clearTimeout(videoRequestTimerRef.current);
+    videoRequestTimerRef.current = null;
+  }, []);
+
   const resetVideoCallState = useCallback(() => {
+    clearVideoRequestTimer();
     closePeerConnection();
     stopMediaTracks(localStreamRef.current);
     stopMediaTracks(remoteStreamRef.current);
@@ -436,7 +446,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     setIsVideoCallActive(false);
     setIsVideoRequestPending(false);
     setIsVideoRequestModalOpen(false);
-  }, [closePeerConnection]);
+  }, [clearVideoRequestTimer, closePeerConnection]);
 
   const handleEndVideoCall = useCallback(
     shouldNotifyPeer => {
@@ -621,6 +631,13 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       resetVideoCallState();
     },
     [resetVideoCallState]
+  );
+
+  useEffect(
+    () => () => {
+      clearVideoRequestTimer();
+    },
+    [clearVideoRequestTimer]
   );
 
   useEffect(() => {
@@ -980,6 +997,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                 publishVideoSignal({ type: 'video-reject' });
                 return;
               }
+              clearVideoRequestTimer();
+              setIsVideoRequestPending(false);
               setVideoRequestSenderRole(payload?.senderRole === 'host' ? 'host' : 'guest');
               setVideoRequestSenderName(
                 typeof payload?.senderName === 'string' && payload.senderName.trim()
@@ -995,12 +1014,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
               if (!isVideoRequestPending) {
                 return;
               }
+              clearVideoRequestTimer();
               setIsVideoRequestPending(false);
               setIsVideoCallActive(true);
               void handleStartVideoOffer();
               return;
             }
             if (payload?.type === 'video-reject') {
+              clearVideoRequestTimer();
               setIsVideoRequestPending(false);
               addMessage('System', `${payload?.senderName || 'Peer'} declined video call.`, { type: 'system' });
               return;
@@ -1090,6 +1111,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     };
   }, [
     applySessionExpiryUpdate,
+    clearVideoRequestTimer,
     handleIncomingVideoAnswer,
     handleIncomingVideoIceCandidate,
     handleIncomingVideoOffer,
@@ -1332,6 +1354,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (isChatLocked || isWaiting) {
       return;
     }
+    if (!mqttClientRef.current?.connected) {
+      setTransportError('Realtime connection is not ready. Please wait a moment and try again.');
+      return;
+    }
     if (isVideoCallActive) {
       handleEndVideoCall(true);
       addMessage('System', 'Video call ended.', { type: 'system' });
@@ -1340,9 +1366,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (isVideoRequestPending) {
       return;
     }
+    clearVideoRequestTimer();
     setIsVideoRequestPending(true);
     publishVideoSignal({ type: 'video-request' });
     addMessage('System', 'Video call request sent.', { type: 'system' });
+    videoRequestTimerRef.current = window.setTimeout(() => {
+      videoRequestTimerRef.current = null;
+      setIsVideoRequestPending(false);
+      addMessage('System', 'No response to video request. Please try again.', { type: 'system' });
+    }, 12000);
   };
 
   const handleAcceptVideoRequest = async () => {
