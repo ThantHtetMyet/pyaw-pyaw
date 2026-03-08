@@ -339,6 +339,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const reconnectRetryTimerRef = useRef(null);
   const reconnectAttemptCountRef = useRef(0);
   const isRestartingIceRef = useRef(false);
+  const senderQualityMonitorTimerRef = useRef(null);
+  const senderQualityProfileRef = useRef('balanced');
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
@@ -442,6 +444,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       window.clearInterval(reconnectRetryTimerRef.current);
       reconnectRetryTimerRef.current = null;
     }
+    if (senderQualityMonitorTimerRef.current) {
+      window.clearInterval(senderQualityMonitorTimerRef.current);
+      senderQualityMonitorTimerRef.current = null;
+    }
+    senderQualityProfileRef.current = 'balanced';
     reconnectAttemptCountRef.current = 0;
     isRestartingIceRef.current = false;
     const peerConnection = peerConnectionRef.current;
@@ -484,6 +491,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     clearVideoRequestTimer();
     pendingRemoteIceCandidatesRef.current = [];
     hasConnectedOnceRef.current = false;
+    senderQualityProfileRef.current = 'balanced';
     reconnectAttemptCountRef.current = 0;
     isRestartingIceRef.current = false;
     closePeerConnection();
@@ -540,6 +548,97 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
   }, [publishVideoSignal]);
 
+  const applyVideoSenderProfile = useCallback(async profile => {
+    const peerConnection = peerConnectionRef.current;
+    if (!peerConnection) {
+      return;
+    }
+    const senderProfile = profile === 'low'
+      ? { maxBitrate: 220000, maxFramerate: 12, scaleResolutionDownBy: 1.6 }
+      : profile === 'high'
+        ? { maxBitrate: 700000, maxFramerate: 24, scaleResolutionDownBy: 1 }
+        : { maxBitrate: 420000, maxFramerate: 18, scaleResolutionDownBy: 1.25 };
+    const videoSenders = peerConnection.getSenders().filter(sender => sender.track?.kind === 'video');
+    await Promise.all(
+      videoSenders.map(async sender => {
+        if (typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') {
+          return;
+        }
+        const currentParams = sender.getParameters();
+        const currentEncoding = currentParams.encodings && currentParams.encodings[0]
+          ? currentParams.encodings[0]
+          : {};
+        const nextParams = {
+          ...currentParams,
+          encodings: [
+            {
+              ...currentEncoding,
+              maxBitrate: senderProfile.maxBitrate,
+              maxFramerate: senderProfile.maxFramerate,
+              scaleResolutionDownBy: senderProfile.scaleResolutionDownBy,
+            },
+          ],
+          degradationPreference: 'maintain-framerate',
+        };
+        try {
+          await sender.setParameters(nextParams);
+        } catch {
+        }
+      })
+    );
+    senderQualityProfileRef.current = profile;
+  }, []);
+
+  const startSenderQualityMonitor = useCallback(() => {
+    const peerConnection = peerConnectionRef.current;
+    if (!peerConnection) {
+      return;
+    }
+    if (senderQualityMonitorTimerRef.current) {
+      return;
+    }
+    senderQualityMonitorTimerRef.current = window.setInterval(async () => {
+      const currentPeerConnection = peerConnectionRef.current;
+      if (!currentPeerConnection || currentPeerConnection.connectionState !== 'connected') {
+        return;
+      }
+      const videoSender = currentPeerConnection.getSenders().find(sender => sender.track?.kind === 'video');
+      if (!videoSender) {
+        return;
+      }
+      try {
+        const stats = await videoSender.getStats();
+        let outboundReport = null;
+        let selectedPair = null;
+        stats.forEach(report => {
+          if (!outboundReport && report.type === 'outbound-rtp' && report.kind === 'video' && !report.isRemote) {
+            outboundReport = report;
+          }
+          if (!selectedPair && report.type === 'candidate-pair' && report.nominated) {
+            selectedPair = report;
+          }
+        });
+        if (!outboundReport) {
+          return;
+        }
+        const bitrateKbps = Number.isFinite(outboundReport.bitrateMean)
+          ? outboundReport.bitrateMean / 1000
+          : Number.isFinite(outboundReport.bytesSent) && Number.isFinite(outboundReport.timestamp)
+            ? outboundReport.bytesSent / Math.max(1, outboundReport.timestamp / 1000)
+            : 0;
+        const rttSeconds = Number.isFinite(selectedPair?.currentRoundTripTime) ? selectedPair.currentRoundTripTime : 0;
+        const outboundFps = Number.isFinite(outboundReport.framesPerSecond) ? outboundReport.framesPerSecond : 0;
+        const shouldUseLowProfile = rttSeconds > 0.85 || bitrateKbps < 180 || outboundFps < 12;
+        const shouldUseBalancedProfile = rttSeconds > 0.45 || bitrateKbps < 320 || outboundFps < 18;
+        const nextProfile = shouldUseLowProfile ? 'low' : shouldUseBalancedProfile ? 'balanced' : 'high';
+        if (nextProfile !== senderQualityProfileRef.current) {
+          await applyVideoSenderProfile(nextProfile);
+        }
+      } catch {
+      }
+    }, 5000);
+  }, [applyVideoSenderProfile]);
+
   const handleEndVideoCall = useCallback(
     shouldNotifyPeer => {
       if (shouldNotifyPeer) {
@@ -559,9 +658,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        width: { ideal: 640, max: 1280 },
-        height: { ideal: 360, max: 720 },
-        frameRate: { ideal: 24, max: 30 },
+        width: { ideal: 480, max: 960 },
+        height: { ideal: 270, max: 540 },
+        frameRate: { ideal: 18, max: 24 },
       },
       audio: {
         echoCancellation: true,
@@ -643,6 +742,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       const state = peerConnection.connectionState;
       if (state === 'connected') {
         hasConnectedOnceRef.current = true;
+        startSenderQualityMonitor();
+        void applyVideoSenderProfile('balanced');
         if (connectionLossTimerRef.current) {
           window.clearTimeout(connectionLossTimerRef.current);
           connectionLossTimerRef.current = null;
@@ -708,7 +809,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     });
     peerConnectionRef.current = peerConnection;
     return peerConnection;
-  }, [ensureLocalMediaStream, publishVideoSignal, resetVideoCallState, restartIceConnection]);
+  }, [applyVideoSenderProfile, ensureLocalMediaStream, publishVideoSignal, resetVideoCallState, restartIceConnection, startSenderQualityMonitor]);
 
   const handleStartVideoOffer = useCallback(async () => {
     try {
