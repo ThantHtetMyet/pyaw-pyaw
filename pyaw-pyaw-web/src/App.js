@@ -287,6 +287,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const currentSessionExpiresAtRef = useRef(sessionExpiresAt);
   const promptedExpiresAtRef = useRef(0);
   const hasHandledExpiredExitRef = useRef(false);
+  const expireExitTimerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -430,20 +431,43 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
   useEffect(() => {
     if (!isExpired || hasHandledExpiredExitRef.current) {
+      if (expireExitTimerRef.current) {
+        window.clearTimeout(expireExitTimerRef.current);
+        expireExitTimerRef.current = null;
+      }
       return;
     }
-    hasHandledExpiredExitRef.current = true;
-    setIsComposeModalOpen(false);
-    setIsKickoutModalOpen(false);
-    setIsExtendSessionModalOpen(false);
-    setInputValue('');
-    const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, role, expired: true };
-    if (typeof onExit === 'function') {
-      onExit(exitPayload);
+    if (expireExitTimerRef.current) {
       return;
     }
-    notifyMapAndClose(exitPayload);
+    expireExitTimerRef.current = window.setTimeout(() => {
+      expireExitTimerRef.current = null;
+      if (!isExpired || hasHandledExpiredExitRef.current) {
+        return;
+      }
+      hasHandledExpiredExitRef.current = true;
+      setIsComposeModalOpen(false);
+      setIsKickoutModalOpen(false);
+      setIsExtendSessionModalOpen(false);
+      setInputValue('');
+      const exitPayload = { refreshRooms: true, terminatedByHost: false, topic, role, expired: true };
+      if (typeof onExit === 'function') {
+        onExit(exitPayload);
+        return;
+      }
+      notifyMapAndClose(exitPayload);
+    }, 1500);
   }, [isExpired, notifyMapAndClose, onExit, role, topic]);
+
+  useEffect(
+    () => () => {
+      if (expireExitTimerRef.current) {
+        window.clearTimeout(expireExitTimerRef.current);
+        expireExitTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   const isWaiting = !isPeerJoined && !isExpired;
   const [selfCountry, setSelfCountry] = useState('');
@@ -638,16 +662,29 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         });
 
         mqttClient.on('message', (messageTopic, messageBuffer) => {
-          if (Date.now() >= currentSessionExpiresAtRef.current) {
-            return;
-          }
-
           const payloadText = messageBuffer.toString('utf8');
           let payload;
           try {
             payload = JSON.parse(payloadText);
           } catch (error) {
             payload = { text: payloadText };
+          }
+
+          const incomingType = typeof payload?.type === 'string' ? payload.type.trim().toLowerCase() : '';
+          const incomingExpiresAt = Date.parse(payload?.expiresAt ?? '');
+          const isSessionExtendedMessage = (
+            incomingType === 'session-extended' ||
+            incomingType === 'session_extended' ||
+            incomingType === 'extended'
+          ) && Number.isFinite(incomingExpiresAt);
+
+          if (isSessionExtendedMessage) {
+            applySessionExpiryUpdate(payload?.expiresAt);
+            return;
+          }
+
+          if (Date.now() >= currentSessionExpiresAtRef.current) {
+            return;
           }
 
           const senderId = payload?.senderId || payload?.clientId;
@@ -703,10 +740,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           }
 
           if (messageTopic.endsWith('/chat')) {
-            if (payload?.type === 'session-extended') {
-              applySessionExpiryUpdate(payload?.expiresAt);
-              return;
-            }
             if (payload?.type === 'kill') {
               setIsRoomKilled(true);
               setShowChatInterface(true);
