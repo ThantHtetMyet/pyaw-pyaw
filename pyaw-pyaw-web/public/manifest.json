@@ -1,7 +1,12 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Pyaw Pyaw",
+  "name": "Pyaw Pyaw",
   "icons": [
+    {
+      "src": "pyaw-pyaw-favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "64x64"
+    },
     {
       "src": "favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
