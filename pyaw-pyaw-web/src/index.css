@@ -1815,9 +1815,10 @@ code {
 }
 
 .chat-video-button.active {
-  border-color: rgba(255, 180, 190, 0.72);
-  background: linear-gradient(145deg, rgba(125, 33, 54, 0.82), rgba(78, 21, 45, 0.86));
-  color: #ffe7ee;
+  border-color: rgba(255, 181, 195, 0.88);
+  background: linear-gradient(145deg, rgba(166, 38, 74, 0.92), rgba(99, 21, 52, 0.92));
+  color: #fff3f6;
+  box-shadow: 0 0 0 1px rgba(255, 215, 225, 0.2), 0 8px 18px rgba(84, 14, 40, 0.45);
 }
 
 .chat-video-button:disabled {
@@ -2047,8 +2048,8 @@ code {
   }
 
   .room-body.video-active .room-video-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
     gap: 8px;
   }
 

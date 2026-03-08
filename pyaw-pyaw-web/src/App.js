@@ -333,6 +333,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
+  const pendingRemoteIceCandidatesRef = useRef([]);
+  const connectionLossTimerRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
@@ -428,6 +430,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   );
 
   const closePeerConnection = useCallback(() => {
+    if (connectionLossTimerRef.current) {
+      window.clearTimeout(connectionLossTimerRef.current);
+      connectionLossTimerRef.current = null;
+    }
     const peerConnection = peerConnectionRef.current;
     if (!peerConnection) {
       return;
@@ -435,6 +441,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     peerConnection.onicecandidate = null;
     peerConnection.ontrack = null;
     peerConnection.onconnectionstatechange = null;
+    peerConnection.oniceconnectionstatechange = null;
     peerConnection.close();
     peerConnectionRef.current = null;
   }, []);
@@ -465,6 +472,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
   const resetVideoCallState = useCallback(() => {
     clearVideoRequestTimer();
+    pendingRemoteIceCandidatesRef.current = [];
     closePeerConnection();
     stopMediaTracks(localStreamRef.current);
     stopMediaTracks(remoteStreamRef.current);
@@ -476,6 +484,23 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     setIsVideoRequestPending(false);
     setIsVideoRequestModalOpen(false);
   }, [clearVideoRequestTimer, closePeerConnection]);
+
+  const flushPendingRemoteIceCandidates = useCallback(async peerConnection => {
+    if (!peerConnection?.remoteDescription) {
+      return;
+    }
+    const queuedCandidates = pendingRemoteIceCandidatesRef.current;
+    if (!queuedCandidates.length) {
+      return;
+    }
+    pendingRemoteIceCandidatesRef.current = [];
+    for (const queuedCandidate of queuedCandidates) {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(queuedCandidate));
+      } catch {
+      }
+    }
+  }, []);
 
   const handleEndVideoCall = useCallback(
     shouldNotifyPeer => {
@@ -540,8 +565,34 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     };
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
-      if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      if (state === 'connected') {
+        if (connectionLossTimerRef.current) {
+          window.clearTimeout(connectionLossTimerRef.current);
+          connectionLossTimerRef.current = null;
+        }
+        return;
+      }
+      if (state === 'failed' || state === 'closed') {
         resetVideoCallState();
+        return;
+      }
+      if (state === 'disconnected' && !connectionLossTimerRef.current) {
+        connectionLossTimerRef.current = window.setTimeout(() => {
+          connectionLossTimerRef.current = null;
+          const currentState = peerConnection.connectionState;
+          if (currentState === 'disconnected' || currentState === 'failed' || currentState === 'closed') {
+            resetVideoCallState();
+          }
+        }, 10000);
+      }
+    };
+    peerConnection.oniceconnectionstatechange = () => {
+      const iceState = peerConnection.iceConnectionState;
+      if (iceState === 'connected' || iceState === 'completed') {
+        if (connectionLossTimerRef.current) {
+          window.clearTimeout(connectionLossTimerRef.current);
+          connectionLossTimerRef.current = null;
+        }
       }
     };
     const stream = await ensureLocalMediaStream();
@@ -603,6 +654,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         setIsVideoCallActive(true);
         const peerConnection = await ensurePeerConnection();
         await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        await flushPendingRemoteIceCandidates(peerConnection);
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         publishVideoSignal({
@@ -614,7 +666,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         setTransportError(error.message || 'Unable to connect video call.');
       }
     },
-    [ensurePeerConnection, publishVideoSignal, resetVideoCallState]
+    [ensurePeerConnection, flushPendingRemoteIceCandidates, publishVideoSignal, resetVideoCallState]
   );
 
   const handleIncomingVideoAnswer = useCallback(
@@ -628,18 +680,23 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       }
       try {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        await flushPendingRemoteIceCandidates(peerConnection);
       } catch (error) {
         resetVideoCallState();
         setTransportError(error.message || 'Unable to finalize video call.');
       }
     },
-    [resetVideoCallState]
+    [flushPendingRemoteIceCandidates, resetVideoCallState]
   );
 
   const handleIncomingVideoIceCandidate = useCallback(async payload => {
     const candidate = payload?.candidate;
     const peerConnection = peerConnectionRef.current;
-    if (!candidate || !peerConnection) {
+    if (!candidate) {
+      return;
+    }
+    if (!peerConnection || !peerConnection.remoteDescription) {
+      pendingRemoteIceCandidatesRef.current = [...pendingRemoteIceCandidatesRef.current, candidate].slice(-30);
       return;
     }
     try {
@@ -1774,7 +1831,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
             >
               {isVideoCallActive ? (
                 <svg viewBox="0 0 24 24" className="chat-video-icon" aria-hidden="true">
-                  <path d="M4.8 10.1c4.5-2.4 9.9-2.4 14.4 0l1.3.7a1 1 0 0 1 .5.9v3.3a1 1 0 0 1-.5.9l-2.9 1.6a1 1 0 0 1-1.5-.9V14h-2.8l-1.8 2.3a1 1 0 0 1-.8.4H9.3a1 1 0 0 1-.8-.4L6.7 14H3.9v2.7a1 1 0 0 1-1.5.9L-.5 15.9a1 1 0 0 1-.5-.9v-3.3a1 1 0 0 1 .5-.9z" transform="translate(2 0)" />
+                  <path d="M4.5 15.2a8.1 8.1 0 0 1 5.8-2.4h3.4a8.1 8.1 0 0 1 5.8 2.4l1.4 1.4a1 1 0 0 1 0 1.4l-1.7 1.7a1 1 0 0 1-1.4 0l-1.4-1.4a4 4 0 0 0-2.8-1.2h-3.4a4 4 0 0 0-2.8 1.2l-1.4 1.4a1 1 0 0 1-1.4 0L3 18a1 1 0 0 1 0-1.4z" />
                 </svg>
               ) : (
                 <svg viewBox="0 0 24 24" className="chat-video-icon" aria-hidden="true">
