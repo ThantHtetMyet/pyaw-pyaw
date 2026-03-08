@@ -317,6 +317,19 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const hasHandledExpiredExitRef = useRef(false);
   const expireExitTimerRef = useRef(null);
   const videoRequestTimerRef = useRef(null);
+  const selfCountryRef = useRef(selfCountry);
+  const isChatLockedRef = useRef(false);
+  const isVideoCallActiveRef = useRef(isVideoCallActive);
+  const isVideoRequestPendingRef = useRef(isVideoRequestPending);
+  const videoSignalHandlersRef = useRef({
+    publishVideoSignal: () => {},
+    clearVideoRequestTimer: () => {},
+    handleStartVideoOffer: () => Promise.resolve(),
+    handleIncomingVideoOffer: () => Promise.resolve(),
+    handleIncomingVideoAnswer: () => Promise.resolve(),
+    handleIncomingVideoIceCandidate: () => Promise.resolve(),
+    resetVideoCallState: () => {},
+  });
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
@@ -433,6 +446,22 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     window.clearTimeout(videoRequestTimerRef.current);
     videoRequestTimerRef.current = null;
   }, []);
+
+  useEffect(() => {
+    selfCountryRef.current = selfCountry;
+  }, [selfCountry]);
+
+  useEffect(() => {
+    isChatLockedRef.current = isChatLocked;
+  }, [isChatLocked]);
+
+  useEffect(() => {
+    isVideoCallActiveRef.current = isVideoCallActive;
+  }, [isVideoCallActive]);
+
+  useEffect(() => {
+    isVideoRequestPendingRef.current = isVideoRequestPending;
+  }, [isVideoRequestPending]);
 
   const resetVideoCallState = useCallback(() => {
     clearVideoRequestTimer();
@@ -579,6 +608,26 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     } catch {
     }
   }, []);
+
+  useEffect(() => {
+    videoSignalHandlersRef.current = {
+      publishVideoSignal,
+      clearVideoRequestTimer,
+      handleStartVideoOffer,
+      handleIncomingVideoOffer,
+      handleIncomingVideoAnswer,
+      handleIncomingVideoIceCandidate,
+      resetVideoCallState,
+    };
+  }, [
+    clearVideoRequestTimer,
+    handleIncomingVideoAnswer,
+    handleIncomingVideoIceCandidate,
+    handleIncomingVideoOffer,
+    handleStartVideoOffer,
+    publishVideoSignal,
+    resetVideoCallState,
+  ]);
 
   const scrollToBottom = (behavior = 'smooth') => {
     const messagesContainer = messagesContainerRef.current;
@@ -899,7 +948,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                 senderId: clientIdRef.current,
                 senderRole: role,
                 senderName: username,
-                senderCountry: selfCountry,
+                senderCountry: selfCountryRef.current,
               })
             );
           });
@@ -984,7 +1033,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                   senderId: clientIdRef.current,
                   senderRole: role,
                   senderName: username,
-                  senderCountry: selfCountry,
+                  senderCountry: selfCountryRef.current,
                 })
               );
             }
@@ -992,12 +1041,13 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           }
 
           if (messageTopic.endsWith('/chat')) {
+            const videoSignalHandlers = videoSignalHandlersRef.current;
             if (payload?.type === 'video-request') {
-              if (isChatLocked || isVideoCallActive) {
-                publishVideoSignal({ type: 'video-reject' });
+              if (isChatLockedRef.current || isVideoCallActiveRef.current) {
+                videoSignalHandlers.publishVideoSignal({ type: 'video-reject' });
                 return;
               }
-              clearVideoRequestTimer();
+              videoSignalHandlers.clearVideoRequestTimer();
               setIsVideoRequestPending(false);
               setVideoRequestSenderRole(payload?.senderRole === 'host' ? 'host' : 'guest');
               setVideoRequestSenderName(
@@ -1011,36 +1061,36 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
               return;
             }
             if (payload?.type === 'video-accept') {
-              if (!isVideoRequestPending) {
+              if (!isVideoRequestPendingRef.current) {
                 return;
               }
-              clearVideoRequestTimer();
+              videoSignalHandlers.clearVideoRequestTimer();
               setIsVideoRequestPending(false);
               setIsVideoCallActive(true);
-              void handleStartVideoOffer();
+              void videoSignalHandlers.handleStartVideoOffer();
               return;
             }
             if (payload?.type === 'video-reject') {
-              clearVideoRequestTimer();
+              videoSignalHandlers.clearVideoRequestTimer();
               setIsVideoRequestPending(false);
               addMessage('System', `${payload?.senderName || 'Peer'} declined video call.`, { type: 'system' });
               return;
             }
             if (payload?.type === 'video-end') {
-              resetVideoCallState();
+              videoSignalHandlers.resetVideoCallState();
               addMessage('System', 'Video call ended.', { type: 'system' });
               return;
             }
             if (payload?.type === 'webrtc-offer') {
-              void handleIncomingVideoOffer(payload);
+              void videoSignalHandlers.handleIncomingVideoOffer(payload);
               return;
             }
             if (payload?.type === 'webrtc-answer') {
-              void handleIncomingVideoAnswer(payload);
+              void videoSignalHandlers.handleIncomingVideoAnswer(payload);
               return;
             }
             if (payload?.type === 'webrtc-ice') {
-              void handleIncomingVideoIceCandidate(payload);
+              void videoSignalHandlers.handleIncomingVideoIceCandidate(payload);
               return;
             }
             if (payload?.type === 'kill') {
@@ -1111,21 +1161,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     };
   }, [
     applySessionExpiryUpdate,
-    clearVideoRequestTimer,
-    handleIncomingVideoAnswer,
-    handleIncomingVideoIceCandidate,
-    handleIncomingVideoOffer,
-    handleStartVideoOffer,
-    isChatLocked,
     isHostRole,
-    isVideoCallActive,
-    isVideoRequestPending,
     notifyMapAndClose,
     onExit,
-    publishVideoSignal,
     resetVideoCallState,
     role,
-    selfCountry,
     topic,
     updatePeerInfo,
     username,
