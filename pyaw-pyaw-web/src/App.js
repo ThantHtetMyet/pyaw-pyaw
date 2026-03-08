@@ -494,7 +494,23 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('Video call is not supported in this browser.');
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640, max: 1280 },
+        height: { ideal: 360, max: 720 },
+        frameRate: { ideal: 24, max: 30 },
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    stream.getVideoTracks().forEach(track => {
+      if ('contentHint' in track) {
+        track.contentHint = 'motion';
+      }
+    });
     localStreamRef.current = stream;
     setLocalMediaStream(stream);
     return stream;
@@ -531,6 +547,29 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     const stream = await ensureLocalMediaStream();
     stream.getTracks().forEach(track => {
       peerConnection.addTrack(track, stream);
+    });
+    peerConnection.getSenders().forEach(sender => {
+      if (!sender.track || sender.track.kind !== 'video' || typeof sender.getParameters !== 'function') {
+        return;
+      }
+      const currentParams = sender.getParameters();
+      const encoding = currentParams.encodings && currentParams.encodings[0]
+        ? currentParams.encodings[0]
+        : {};
+      const nextParams = {
+        ...currentParams,
+        encodings: [
+          {
+            ...encoding,
+            maxBitrate: 800000,
+            maxFramerate: 30,
+          },
+        ],
+        degradationPreference: 'maintain-framerate',
+      };
+      if (typeof sender.setParameters === 'function') {
+        sender.setParameters(nextParams).catch(() => {});
+      }
     });
     peerConnectionRef.current = peerConnection;
     return peerConnection;
@@ -682,6 +721,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       return;
     }
     localVideoRef.current.srcObject = localMediaStream || null;
+    if (localMediaStream) {
+      localVideoRef.current.play().catch(() => {});
+    }
   }, [localMediaStream]);
 
   useEffect(() => {
@@ -689,6 +731,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       return;
     }
     remoteVideoRef.current.srcObject = remoteMediaStream || null;
+    if (remoteMediaStream) {
+      remoteVideoRef.current.play().catch(() => {});
+    }
   }, [remoteMediaStream]);
 
   useEffect(() => {
@@ -1578,6 +1623,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const videoRequestLabel = videoRequestSenderName || videoRequestRoleLabel;
   const isVideoButtonDisabled = isChatLocked || isWaiting || (!isVideoCallActive && !isPeerJoined);
   const showVideoPanel = Boolean(localMediaStream || remoteMediaStream || isVideoCallActive);
+  const isVideoLayoutActive = isVideoCallActive || showVideoPanel;
 
   return (
     <div className="room-tab-page">
@@ -1639,7 +1685,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
           </div>
         </div>
       </div>
-      <div className="room-body">
+      <div className={`room-body ${isVideoLayoutActive ? 'video-active' : ''}`}>
         {isExpired && <div className="room-status expired">Session expired. Please create a new room.</div>}
         {isRoomKilled && <div className="room-status expired">Chat ended by host.</div>}
         {isWaiting && (
@@ -1726,9 +1772,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
               disabled={isVideoButtonDisabled}
               aria-label={isVideoCallActive ? 'End video call' : 'Start video call'}
             >
-              <svg viewBox="0 0 24 24" className="chat-video-icon" aria-hidden="true">
-                <path d="M15 7.5a2.5 2.5 0 0 0-2.5-2.5h-7A2.5 2.5 0 0 0 3 7.5v9A2.5 2.5 0 0 0 5.5 19h7a2.5 2.5 0 0 0 2.5-2.5V15l4.2 3a1 1 0 0 0 1.6-.8V6.8a1 1 0 0 0-1.6-.8L15 9z" />
-              </svg>
+              {isVideoCallActive ? (
+                <svg viewBox="0 0 24 24" className="chat-video-icon" aria-hidden="true">
+                  <path d="M4.8 10.1c4.5-2.4 9.9-2.4 14.4 0l1.3.7a1 1 0 0 1 .5.9v3.3a1 1 0 0 1-.5.9l-2.9 1.6a1 1 0 0 1-1.5-.9V14h-2.8l-1.8 2.3a1 1 0 0 1-.8.4H9.3a1 1 0 0 1-.8-.4L6.7 14H3.9v2.7a1 1 0 0 1-1.5.9L-.5 15.9a1 1 0 0 1-.5-.9v-3.3a1 1 0 0 1 .5-.9z" transform="translate(2 0)" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="chat-video-icon" aria-hidden="true">
+                  <path d="M15 7.5a2.5 2.5 0 0 0-2.5-2.5h-7A2.5 2.5 0 0 0 3 7.5v9A2.5 2.5 0 0 0 5.5 19h7a2.5 2.5 0 0 0 2.5-2.5V15l4.2 3a1 1 0 0 0 1.6-.8V6.8a1 1 0 0 0-1.6-.8L15 9z" />
+                </svg>
+              )}
             </button>
             {isHostRole && (
               <button
