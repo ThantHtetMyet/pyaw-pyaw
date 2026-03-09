@@ -563,31 +563,26 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         trickle: true,
         config: {
           iceServers: VIDEO_ICE_SERVERS,
-          iceCandidatePoolSize: 10,
-          bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
         },
         offerOptions: {
           offerToReceiveAudio: true,
-          offerToReceiveVideo: true
+          offerToReceiveVideo: true,
         },
-        sdpTransform: (sdp) => {
-          // Optimize for lower latency
-          return sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=extmap:3 urn:ietf:params:rtp-hdrext:toffset\r\n');
-        }
       });
 
       peer.on('signal', data => {
         const client = mqttClientRef.current;
         if (client && client.connected && remotePeerId) {
-          const signalData = {
-            type: 'video-signal',
-            signalType: typeof data?.type === 'string' ? data.type : 'candidate',
-            signal: data,
-            senderId: clientIdRef.current,
-            receiverId: remotePeerId
-          };
-          client.publish(`video-signal/${remotePeerId}`, JSON.stringify(signalData));
+          client.publish(
+            `video-signal/${remotePeerId}`,
+            JSON.stringify({
+              type: 'video-signal',
+              signalType: typeof data?.type === 'string' ? data.type : 'candidate',
+              signal: data,
+              senderId: clientIdRef.current,
+              receiverId: remotePeerId,
+            })
+          );
         }
       });
 
@@ -595,40 +590,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         setIsVideoCallActive(true);
         isVideoCallActiveRef.current = true;
         addMessage('System', 'Video call connected.', { type: 'system' });
-
-        // Start connection quality monitoring
-        const monitorConnection = () => {
-          if (!peer || peer.destroyed) return;
-
-          const stats = peer._pc?.getStats();
-          if (stats) {
-            stats.then(report => {
-              report.forEach(stat => {
-                if (stat.type === 'inbound-rtp' && stat.mediaType === 'video') {
-                  const packetLoss = stat.packetsLost / stat.packetsReceived;
-                  const jitter = stat.jitter;
-
-                  // Adaptive bitrate based on connection quality
-                  if (packetLoss > 0.05 || jitter > 0.1) {
-                    // Reduce video quality if high packet loss or jitter
-                    const sender = peer._pc?.getSenders()?.find(s => s.track?.kind === 'video');
-                    if (sender) {
-                      const params = sender.getParameters();
-                      if (params.encodings && params.encodings[0]) {
-                        params.encodings[0].maxBitrate = 250000; // Reduce to 250kbps
-                        sender.setParameters(params);
-                      }
-                    }
-                  }
-                }
-              });
-            }).catch(() => { });
-          }
-
-          setTimeout(monitorConnection, 2000);
-        };
-
-        monitorConnection();
       });
 
       peer.on('stream', streamData => {
@@ -638,33 +599,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
       peer.on('error', error => {
         console.error('WebRTC error:', error);
-
-        // Handle specific error types
-        if (error.code === 'ERR_ICE_CONNECTION_FAILURE') {
-          setTransportError('Connection failed. Trying alternative servers...');
-
-          // Attempt reconnection after delay
-          setTimeout(() => {
-            if (isVideoCallActiveRef.current && !peer.destroyed) {
-              // Try to reconnect with different ICE servers
-              const reconnectPeer = async () => {
-                try {
-                  const newPeer = await createPeerConnection(true, remotePeerId);
-                  if (peerConnectionRef.current === peer) {
-                    peerConnectionRef.current = newPeer;
-                  }
-                } catch (reconnectError) {
-                  setTransportError('Unable to reconnect. Please try again.');
-                  resetVideoCallState();
-                }
-              };
-              reconnectPeer();
-            }
-          }, 3000);
-        } else {
-          setTransportError(error.message || 'Video call connection error.');
-          resetVideoCallState();
-        }
+        setTransportError(error.message || 'Video call connection error. Please try again.');
+        resetVideoCallState();
       });
 
       peer.on('close', () => {
