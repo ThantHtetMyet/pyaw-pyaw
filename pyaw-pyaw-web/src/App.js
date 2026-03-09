@@ -683,8 +683,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const handleIncomingVideoSignal = useCallback(async (signalData) => {
     try {
       if (signalData.type === 'offer') {
+        // Ensure local media stream is available first
+        await ensureLocalMediaStream();
+        
         // Incoming call - create peer connection as responder
-        const peer = await createPeerConnection(false, signalData.senderId);
+        const localStream = localStreamRef.current;
+        const peer = await createPeerConnection(false, signalData.senderId, localStream);
         peer.signal(signalData.signal);
         peerConnectionRef.current = peer;
         
@@ -692,13 +696,17 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         setIsVideoRequestModalOpen(true);
         incomingVideoRequestIdRef.current = signalData.senderId;
         
-        // Auto-accept if already in video call mode
-        if (isVideoCallActiveRef.current) {
+        // Auto-accept if already in video call mode or if user has video panel open
+        if (isVideoCallActiveRef.current || localStreamRef.current || remoteStreamRef.current) {
           setTimeout(() => {
             if (peerConnectionRef.current === peer && !peer.destroyed) {
-              // Already connected, just need to complete signaling
+              // Accept the incoming call
+              setIsVideoRequestModalOpen(false);
+              setIsVideoCallActive(true);
+              isVideoCallActiveRef.current = true;
+              addMessage('System', 'Incoming video call accepted.', { type: 'system' });
             }
-          }, 1000);
+          }, 500);
         }
       } else if (signalData.type === 'answer' && peerConnectionRef.current) {
         // Handle answer from remote peer
@@ -709,7 +717,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       setTransportError(error.message || 'Failed to handle video signal.');
       resetVideoCallState();
     }
-  }, [createPeerConnection, resetVideoCallState]);
+  }, [createPeerConnection, ensureLocalMediaStream, resetVideoCallState]);
 
   const ensurePeerConnection = useCallback(async (isInitiator = false) => {
     if (peerConnectionRef.current && !peerConnectionRef.current.destroyed) {
@@ -722,7 +730,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!remotePeerId) {
       throw new Error('Peer is not ready for video call.');
     }
-    const peer = await createPeerConnection(true, remotePeerId);
+    
+    // Pass the local stream to the peer connection
+    const localStream = localStreamRef.current;
+    const peer = await createPeerConnection(true, remotePeerId, localStream);
     peerConnectionRef.current = peer;
     return peer;
   }, [createPeerConnection]);
@@ -732,13 +743,17 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       setTransportError('');
       setIsVideoCallActive(true);
       isVideoCallActiveRef.current = true;
+      
+      // Ensure local media stream is available first
+      await ensureLocalMediaStream();
+      
       await ensurePeerConnection(true);
       addMessage('System', 'Video call started.', { type: 'system' });
     } catch (error) {
       resetVideoCallState();
       setTransportError(error.message || 'Unable to start video call.');
     }
-  }, [ensurePeerConnection, resetVideoCallState]);
+  }, [ensurePeerConnection, ensureLocalMediaStream, resetVideoCallState]);
 
   const handleIncomingVideoOffer = useCallback(async () => {
     // Video offer is now handled through MQTT signaling
