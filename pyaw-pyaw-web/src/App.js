@@ -577,14 +577,15 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       });
 
       peer.on('signal', data => {
-        if (mqttClient.connected && remotePeerId) {
+        const client = mqttClientRef.current;
+        if (client && client.connected && remotePeerId) {
           const signalData = {
             type: isInitiator ? 'offer' : 'answer',
             signal: data,
             senderId: clientIdRef.current,
             receiverId: remotePeerId
           };
-          mqttClient.publish(`video-signal/${remotePeerId}`, JSON.stringify(signalData));
+          client.publish(`video-signal/${remotePeerId}`, JSON.stringify(signalData));
         }
       });
 
