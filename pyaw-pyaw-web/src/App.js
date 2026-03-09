@@ -1,5 +1,5 @@
 import mqtt from 'mqtt';
-import SimplePeer from 'simple-peer';
+// Native RTCPeerConnection used — SimplePeer removed
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
@@ -344,7 +344,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const currentVideoRequestIdRef = useRef('');
   const incomingVideoRequestIdRef = useRef('');
   const incomingVideoRequestTimerRef = useRef(null);
-  // Removed PeerJS references - now using SimplePeer
   const remotePeerClientIdRef = useRef('');
   const videoSignalHandlersRef = useRef({
     publishVideoSignal: () => { },
@@ -360,6 +359,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const remoteStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  // ICE candidate buffer: candidates that arrive before setRemoteDescription
+  const pendingCandidatesRef = useRef([]);
+  // Whether this side is the initiator (creates/restarts the offer)
+  const isInitiatorRef = useRef(false);
+  // Timer used to delay ICE restart after a transient disconnect
+  const iceDisconnectTimerRef = useRef(null);
   const isExpired = remainingSeconds <= 0;
   const isChatLocked = isExpired || isRoomKilled;
   const isHostRole = role === 'host';
@@ -453,14 +458,23 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   );
 
   const closePeerConnection = useCallback(() => {
-    const peerConnection = peerConnectionRef.current;
-    if (!peerConnection) {
+    const pc = peerConnectionRef.current;
+    if (!pc) {
       return;
     }
-    if (typeof peerConnection.destroy === 'function') {
-      peerConnection.destroy();
-    }
+    // Null out all callbacks first to avoid re-entrant resetVideoCallState calls
+    pc.ontrack = null;
+    pc.onicecandidate = null;
+    pc.oniceconnectionstatechange = null;
+    pc.onconnectionstatechange = null;
+    try { pc.close(); } catch { }
     peerConnectionRef.current = null;
+    // Clear any pending ICE disconnect timer
+    if (iceDisconnectTimerRef.current) {
+      window.clearTimeout(iceDisconnectTimerRef.current);
+      iceDisconnectTimerRef.current = null;
+    }
+    pendingCandidatesRef.current = [];
   }, []);
 
   const clearVideoRequestTimer = useCallback(() => {
@@ -551,68 +565,123 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     return stream;
   }, []);
 
-  // SimplePeer handles connection events internally, no need for bindPeerConnection
+  // ─── Native RTCPeerConnection implementation ────────────────────────────────
+  // Publishes an ICE candidate or SDP signal to the peer via the MQTT
+  // video-signal channel that is already set up on both sides.
+  const publishRtcSignal = useCallback((remotePeerId, signalType, signal) => {
+    const client = mqttClientRef.current;
+    if (!client?.connected || !remotePeerId) {
+      return;
+    }
+    client.publish(
+      `video-signal/${remotePeerId}`,
+      JSON.stringify({
+        type: 'video-signal',
+        signalType,
+        signal,
+        senderId: clientIdRef.current,
+        receiverId: remotePeerId,
+      })
+    );
+  }, []);
 
   const createPeerConnection = useCallback(async (isInitiator = false, remotePeerId = null) => {
-    try {
-      const stream = await ensureLocalMediaStream();
+    const localStream = await ensureLocalMediaStream();
+    isInitiatorRef.current = isInitiator;
+    pendingCandidatesRef.current = [];
 
-      const peer = new SimplePeer({
-        initiator: isInitiator,
-        stream,
-        trickle: true,
-        config: {
-          iceServers: VIDEO_ICE_SERVERS,
-        },
-        offerOptions: {
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true,
-        },
-      });
+    const pc = new RTCPeerConnection({ iceServers: VIDEO_ICE_SERVERS });
 
-      peer.on('signal', data => {
-        const client = mqttClientRef.current;
-        if (client && client.connected && remotePeerId) {
-          client.publish(
-            `video-signal/${remotePeerId}`,
-            JSON.stringify({
-              type: 'video-signal',
-              signalType: typeof data?.type === 'string' ? data.type : 'candidate',
-              signal: data,
-              senderId: clientIdRef.current,
-              receiverId: remotePeerId,
-            })
-          );
+    // ── Send local tracks ──────────────────────────────────────────────────
+    localStream.getTracks().forEach(track => {
+      pc.addTrack(track, localStream);
+    });
+
+    // ── Receive remote tracks ──────────────────────────────────────────────
+    // Build a single MediaStream and update state once all tracks are present.
+    const receivedStream = new MediaStream();
+    pc.ontrack = event => {
+      const incomingTracks = event.streams?.[0]?.getTracks() || [event.track];
+      incomingTracks.forEach(track => {
+        if (!receivedStream.getTrackById(track.id)) {
+          receivedStream.addTrack(track);
         }
       });
+      remoteStreamRef.current = receivedStream;
+      // Trigger re-render with a new MediaStream instance so React notices the change.
+      setRemoteMediaStream(new MediaStream(receivedStream.getTracks()));
+    };
 
-      peer.on('connect', () => {
-        setIsVideoCallActive(true);
-        isVideoCallActiveRef.current = true;
-        addMessage('System', 'Video call connected.', { type: 'system' });
-      });
+    // ── Trickle ICE ───────────────────────────────────────────────────────
+    pc.onicecandidate = event => {
+      if (event.candidate) {
+        publishRtcSignal(remotePeerId, 'candidate', {
+          type: 'candidate',
+          candidate: event.candidate.toJSON(),
+        });
+      }
+    };
 
-      peer.on('stream', streamData => {
-        remoteStreamRef.current = streamData;
-        setRemoteMediaStream(streamData);
-      });
-
-      peer.on('error', error => {
-        console.error('WebRTC error:', error);
-        setTransportError(error.message || 'Video call connection error. Please try again.');
+    // ── ICE connection state — detect and recover from disconnection ───────
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      if (state === 'connected' || state === 'completed') {
+        // Clear any pending disconnect timer on (re-)connection.
+        if (iceDisconnectTimerRef.current) {
+          window.clearTimeout(iceDisconnectTimerRef.current);
+          iceDisconnectTimerRef.current = null;
+        }
+        if (!isVideoCallActiveRef.current) {
+          setIsVideoCallActive(true);
+          isVideoCallActiveRef.current = true;
+          addMessage('System', 'Video call connected.', { type: 'system' });
+        }
+      } else if (state === 'disconnected') {
+        // Transient disconnection — wait 4 s before attempting ICE restart.
+        if (!iceDisconnectTimerRef.current) {
+          iceDisconnectTimerRef.current = window.setTimeout(async () => {
+            iceDisconnectTimerRef.current = null;
+            if (pc.iceConnectionState !== 'disconnected') {
+              return; // Already recovered on its own.
+            }
+            if (!isInitiatorRef.current) {
+              return; // Only the initiator drives the restart.
+            }
+            try {
+              const restartOffer = await pc.createOffer({ iceRestart: true });
+              await pc.setLocalDescription(restartOffer);
+              publishRtcSignal(remotePeerId, 'offer', {
+                type: 'offer',
+                sdp: pc.localDescription.sdp,
+              });
+            } catch (err) {
+              console.error('ICE restart failed:', err);
+              resetVideoCallState();
+            }
+          }, 4000);
+        }
+      } else if (state === 'failed') {
+        if (iceDisconnectTimerRef.current) {
+          window.clearTimeout(iceDisconnectTimerRef.current);
+          iceDisconnectTimerRef.current = null;
+        }
+        setTransportError('Video connection failed. Please end the call and try again.');
         resetVideoCallState();
-      });
+      }
+    };
 
-      peer.on('close', () => {
-        resetVideoCallState();
+    // ── If initiator: create and send the offer ────────────────────────────
+    if (isInitiator) {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      publishRtcSignal(remotePeerId, 'offer', {
+        type: 'offer',
+        sdp: pc.localDescription.sdp,
       });
-
-      return peer;
-    } catch (error) {
-      setTransportError(error.message || 'Failed to create peer connection.');
-      throw error;
     }
-  }, [ensureLocalMediaStream, resetVideoCallState]);
+
+    return pc;
+  }, [ensureLocalMediaStream, publishRtcSignal, resetVideoCallState]);
 
   const handleIncomingVideoSignal = useCallback(async (signalData) => {
     try {
@@ -622,35 +691,72 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       if (signalData?.receiverId && signalData.receiverId !== clientIdRef.current) {
         return;
       }
-      const remotePeerId = typeof signalData?.senderId === 'string' ? signalData.senderId : '';
+      const remotePeerId = typeof signalData.senderId === 'string' ? signalData.senderId : '';
       if (!remotePeerId) {
         return;
       }
       remotePeerClientIdRef.current = remotePeerId;
 
-      let peer = peerConnectionRef.current;
-      if (!peer || peer.destroyed) {
-        if (signalData.signal.type !== 'offer') {
+      const { signal } = signalData;
+      const signalType = signal?.type; // 'offer' | 'answer' | 'candidate'
+
+      if (signalType === 'offer') {
+        // ── Incoming offer (non-initiator path, or ICE restart) ────────────
+        let pc = peerConnectionRef.current;
+        const isNewCall = !pc || pc.signalingState === 'closed';
+        if (isNewCall) {
+          pc = await createPeerConnection(false, remotePeerId);
+          peerConnectionRef.current = pc;
+          setIsVideoRequestModalOpen(false);
+          setIsVideoCallActive(true);
+          isVideoCallActiveRef.current = true;
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
+        // Flush any ICE candidates that arrived before the remote description.
+        for (const candidate of pendingCandidatesRef.current) {
+          await pc.addIceCandidate(candidate).catch(() => {});
+        }
+        pendingCandidatesRef.current = [];
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        publishRtcSignal(remotePeerId, 'answer', {
+          type: 'answer',
+          sdp: pc.localDescription.sdp,
+        });
+      } else if (signalType === 'answer') {
+        // ── Incoming answer (initiator path) ──────────────────────────────
+        const pc = peerConnectionRef.current;
+        if (!pc || pc.signalingState === 'closed') {
           return;
         }
-        await ensureLocalMediaStream();
-        peer = await createPeerConnection(false, remotePeerId);
-        peerConnectionRef.current = peer;
-        setIsVideoRequestModalOpen(false);
-        setIsVideoCallActive(true);
-        isVideoCallActiveRef.current = true;
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
+        // Flush any buffered candidates.
+        for (const candidate of pendingCandidatesRef.current) {
+          await pc.addIceCandidate(candidate).catch(() => {});
+        }
+        pendingCandidatesRef.current = [];
+      } else if (signalType === 'candidate' && signal.candidate) {
+        // ── Trickle ICE candidate ─────────────────────────────────────────
+        const pc = peerConnectionRef.current;
+        const candidate = new RTCIceCandidate(signal.candidate);
+        if (pc && pc.remoteDescription && pc.signalingState !== 'closed') {
+          await pc.addIceCandidate(candidate).catch(() => {});
+        } else {
+          // Buffer the candidate until after setRemoteDescription.
+          pendingCandidatesRef.current.push(candidate);
+        }
       }
-      peer.signal(signalData.signal);
     } catch (error) {
       console.error('Failed to handle video signal:', error);
       setTransportError(error.message || 'Failed to handle video signal.');
       resetVideoCallState();
     }
-  }, [createPeerConnection, ensureLocalMediaStream, resetVideoCallState]);
+  }, [createPeerConnection, publishRtcSignal, resetVideoCallState]);
 
   const ensurePeerConnection = useCallback(async (isInitiator = false) => {
-    if (peerConnectionRef.current && !peerConnectionRef.current.destroyed) {
-      return peerConnectionRef.current;
+    const existing = peerConnectionRef.current;
+    if (existing && existing.signalingState !== 'closed') {
+      return existing;
     }
     if (!isInitiator) {
       return null;
@@ -659,12 +765,9 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!remotePeerId) {
       throw new Error('Peer is not ready for video call.');
     }
-
-    // Pass the local stream to the peer connection
-    const localStream = localStreamRef.current;
-    const peer = await createPeerConnection(true, remotePeerId, localStream);
-    peerConnectionRef.current = peer;
-    return peer;
+    const pc = await createPeerConnection(true, remotePeerId);
+    peerConnectionRef.current = pc;
+    return pc;
   }, [createPeerConnection]);
 
   const handleStartVideoOffer = useCallback(async () => {
