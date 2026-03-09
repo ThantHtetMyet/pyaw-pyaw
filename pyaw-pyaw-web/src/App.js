@@ -824,45 +824,61 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     [clearVideoRequestTimer]
   );
 
-  useEffect(() => {
-    if (!localVideoRef.current) {
+  // Attach a MediaStream to a video element and trigger playback.
+  // This is called both from callback refs (element mount) and from
+  // stream-change effects (stream arrives after element is already mounted).
+  const attachStream = useCallback((videoElement, stream) => {
+    if (!videoElement) {
       return;
     }
-    const localVideoElement = localVideoRef.current;
-    const resumeLocalPlayback = () => {
-      localVideoElement.play().catch(() => { });
-    };
-    localVideoElement.srcObject = localMediaStream || null;
-    localVideoElement.onloadedmetadata = resumeLocalPlayback;
-    localVideoElement.oncanplay = resumeLocalPlayback;
-    if (localMediaStream) {
-      resumeLocalPlayback();
+    if (videoElement.srcObject === stream) {
+      // Already attached — just make sure it is playing.
+      if (stream) {
+        videoElement.play().catch(() => {});
+      }
+      return;
     }
-    return () => {
-      localVideoElement.onloadedmetadata = null;
-      localVideoElement.oncanplay = null;
-    };
-  }, [localMediaStream]);
+    videoElement.srcObject = stream || null;
+    if (!stream) {
+      return;
+    }
+    // Use events so we play as soon as the browser has enough data.
+    const tryPlay = () => { videoElement.play().catch(() => {}); };
+    videoElement.onloadedmetadata = tryPlay;
+    videoElement.oncanplay = tryPlay;
+    // Also attempt immediately — browser may already have the metadata.
+    tryPlay();
+  }, []);
+
+  // Callback ref for the LOCAL video element.
+  // React calls this synchronously when the element mounts/unmounts,
+  // guaranteeing the stream is attached without any ref-timing race.
+  const localVideoCallbackRef = useCallback(
+    (element) => {
+      localVideoRef.current = element;
+      attachStream(element, localStreamRef.current);
+    },
+    [attachStream]
+  );
+
+  // Callback ref for the REMOTE video element.
+  const remoteVideoCallbackRef = useCallback(
+    (element) => {
+      remoteVideoRef.current = element;
+      attachStream(element, remoteStreamRef.current);
+    },
+    [attachStream]
+  );
+
+  // Backup effect: if the stream reference changes AFTER the video element
+  // is already mounted (e.g. reconnect), re-attach.
+  useEffect(() => {
+    attachStream(localVideoRef.current, localMediaStream);
+  }, [attachStream, localMediaStream]);
 
   useEffect(() => {
-    if (!remoteVideoRef.current) {
-      return;
-    }
-    const remoteVideoElement = remoteVideoRef.current;
-    const resumeRemotePlayback = () => {
-      remoteVideoElement.play().catch(() => { });
-    };
-    remoteVideoElement.srcObject = remoteMediaStream || null;
-    remoteVideoElement.onloadedmetadata = resumeRemotePlayback;
-    remoteVideoElement.oncanplay = resumeRemotePlayback;
-    if (remoteMediaStream) {
-      resumeRemotePlayback();
-    }
-    return () => {
-      remoteVideoElement.onloadedmetadata = null;
-      remoteVideoElement.oncanplay = null;
-    };
-  }, [remoteMediaStream]);
+    attachStream(remoteVideoRef.current, remoteMediaStream);
+  }, [attachStream, remoteMediaStream]);
 
   useEffect(() => {
     if (!isComposeModalOpen) {
@@ -1945,7 +1961,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                   <div className="room-video-tile">
                     <div className="room-video-name">{receiverName}</div>
                     {remoteMediaStream ? (
-                      <video className="room-video-element" ref={remoteVideoRef} autoPlay playsInline />
+                      <video className="room-video-element" ref={remoteVideoCallbackRef} autoPlay playsInline />
                     ) : (
                       <div className="room-video-placeholder">Waiting for peer video...</div>
                     )}
@@ -1953,7 +1969,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                   <div className="room-video-tile">
                     <div className="room-video-name">{senderName}</div>
                     {localMediaStream ? (
-                      <video className="room-video-element" ref={localVideoRef} autoPlay playsInline muted />
+                      <video className="room-video-element" ref={localVideoCallbackRef} autoPlay playsInline muted />
                     ) : (
                       <div className="room-video-placeholder">Waiting for camera...</div>
                     )}
