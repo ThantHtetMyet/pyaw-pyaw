@@ -19,14 +19,14 @@ const VIDEO_ICE_SERVERS = [
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
-  
+
   // Public STUN servers
   { urls: 'stun:stun.services.mozilla.com' },
   { urls: 'stun:stunserver.org:3478' },
   { urls: 'stun:stun.ekiga.net' },
   { urls: 'stun:stun.ideasip.com' },
   { urls: 'stun:stun.iptel.org' },
-  
+
   // TURN servers for better NAT traversal
   { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
@@ -347,13 +347,13 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   // Removed PeerJS references - now using SimplePeer
   const remotePeerClientIdRef = useRef('');
   const videoSignalHandlersRef = useRef({
-    publishVideoSignal: () => {},
-    clearVideoRequestTimer: () => {},
+    publishVideoSignal: () => { },
+    clearVideoRequestTimer: () => { },
     handleStartVideoOffer: () => Promise.resolve(),
     handleIncomingVideoOffer: () => Promise.resolve(),
     handleIncomingVideoAnswer: () => Promise.resolve(),
     handleIncomingVideoSignal: () => Promise.resolve(),
-    resetVideoCallState: () => {},
+    resetVideoCallState: () => { },
   });
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -556,9 +556,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const createPeerConnection = useCallback(async (isInitiator = false, remotePeerId = null) => {
     try {
       const stream = await ensureLocalMediaStream();
-      
+
       const peer = new SimplePeer({
         initiator: isInitiator,
+        stream,
         trickle: true,
         config: {
           iceServers: VIDEO_ICE_SERVERS,
@@ -594,11 +595,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         setIsVideoCallActive(true);
         isVideoCallActiveRef.current = true;
         addMessage('System', 'Video call connected.', { type: 'system' });
-        
+
         // Start connection quality monitoring
         const monitorConnection = () => {
           if (!peer || peer.destroyed) return;
-          
+
           const stats = peer._pc?.getStats();
           if (stats) {
             stats.then(report => {
@@ -606,7 +607,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                 if (stat.type === 'inbound-rtp' && stat.mediaType === 'video') {
                   const packetLoss = stat.packetsLost / stat.packetsReceived;
                   const jitter = stat.jitter;
-                  
+
                   // Adaptive bitrate based on connection quality
                   if (packetLoss > 0.05 || jitter > 0.1) {
                     // Reduce video quality if high packet loss or jitter
@@ -621,12 +622,12 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                   }
                 }
               });
-            }).catch(() => {});
+            }).catch(() => { });
           }
-          
+
           setTimeout(monitorConnection, 2000);
         };
-        
+
         monitorConnection();
       });
 
@@ -637,11 +638,11 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
       peer.on('error', error => {
         console.error('WebRTC error:', error);
-        
+
         // Handle specific error types
         if (error.code === 'ERR_ICE_CONNECTION_FAILURE') {
           setTransportError('Connection failed. Trying alternative servers...');
-          
+
           // Attempt reconnection after delay
           setTimeout(() => {
             if (isVideoCallActiveRef.current && !peer.destroyed) {
@@ -669,10 +670,6 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       peer.on('close', () => {
         resetVideoCallState();
       });
-
-      if (stream) {
-        peer.addStream(stream);
-      }
 
       return peer;
     } catch (error) {
@@ -726,7 +723,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!remotePeerId) {
       throw new Error('Peer is not ready for video call.');
     }
-    
+
     // Pass the local stream to the peer connection
     const localStream = localStreamRef.current;
     const peer = await createPeerConnection(true, remotePeerId, localStream);
@@ -739,10 +736,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
       setTransportError('');
       setIsVideoCallActive(true);
       isVideoCallActiveRef.current = true;
-      
+
       // Ensure local media stream is available first
       await ensureLocalMediaStream();
-      
+
       await ensurePeerConnection(true);
       addMessage('System', 'Video call started.', { type: 'system' });
     } catch (error) {
@@ -833,7 +830,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
     const localVideoElement = localVideoRef.current;
     const resumeLocalPlayback = () => {
-      localVideoElement.play().catch(() => {});
+      localVideoElement.play().catch(() => { });
     };
     localVideoElement.srcObject = localMediaStream || null;
     localVideoElement.onloadedmetadata = resumeLocalPlayback;
@@ -853,7 +850,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
     const remoteVideoElement = remoteVideoRef.current;
     const resumeRemotePlayback = () => {
-      remoteVideoElement.play().catch(() => {});
+      remoteVideoElement.play().catch(() => { });
     };
     remoteVideoElement.srcObject = remoteMediaStream || null;
     remoteVideoElement.onloadedmetadata = resumeRemotePlayback;
@@ -1001,7 +998,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         } catch {
         }
       },
-      () => {},
+      () => { },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
     return () => {
@@ -1598,7 +1595,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         headers: { 'Content-Type': 'application/json' },
         body: payload,
         keepalive: true,
-      }).catch(() => {});
+      }).catch(() => { });
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
@@ -2302,7 +2299,7 @@ function App() {
         writeHiddenTopics(next);
         return next;
       });
-      
+
       const activeRoomData = {
         topic: room.topic,
         role: 'host',
@@ -2541,7 +2538,7 @@ function App() {
       if (exitMessage) {
         setModalMessage(exitMessage);
       }
-      refreshRoomsSilently().catch(() => {});
+      refreshRoomsSilently().catch(() => { });
     },
     [blockKickedTopic, getExitMessage, hideRoomTopic, refreshRoomsSilently]
   );
@@ -2590,7 +2587,7 @@ function App() {
       if (event.data?.topic) {
         setActiveChatRoom(prev => (prev?.topic === event.data.topic ? null : prev));
       }
-      refreshRoomsSilently().catch(() => {});
+      refreshRoomsSilently().catch(() => { });
     };
     window.addEventListener('message', handleRoomExitMessage);
     return () => {
@@ -2615,7 +2612,7 @@ function App() {
         }
         setHostRoomTopic('');
         window.localStorage.removeItem('pyaw-pyaw-active-room');
-        refreshRoomsSilently().catch(() => {});
+        refreshRoomsSilently().catch(() => { });
       } catch {
       }
     };
@@ -2629,7 +2626,7 @@ function App() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        refreshRoomsSilently().catch(() => {});
+        refreshRoomsSilently().catch(() => { });
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -2640,7 +2637,7 @@ function App() {
 
   useEffect(() => {
     const pollTimer = window.setInterval(() => {
-      refreshRoomsSilently().catch(() => {});
+      refreshRoomsSilently().catch(() => { });
     }, 15000);
     return () => {
       window.clearInterval(pollTimer);
@@ -2694,7 +2691,7 @@ function App() {
     const connectRealtime = () => {
       eventSource = new EventSource(`${apiBaseUrl}/api/rooms/stream`);
       eventSource.onmessage = () => {
-        refreshRoomsSilently().catch(() => {});
+        refreshRoomsSilently().catch(() => { });
       };
       eventSource.onerror = () => {
         eventSource?.close();
@@ -2705,7 +2702,7 @@ function App() {
       };
     };
 
-    refreshRoomsSilently().catch(() => {});
+    refreshRoomsSilently().catch(() => { });
     connectRealtime();
 
     return () => {
