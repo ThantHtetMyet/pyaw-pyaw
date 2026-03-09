@@ -580,7 +580,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         const client = mqttClientRef.current;
         if (client && client.connected && remotePeerId) {
           const signalData = {
-            type: isInitiator ? 'offer' : 'answer',
+            type: 'video-signal',
+            signalType: typeof data?.type === 'string' ? data.type : 'candidate',
             signal: data,
             senderId: clientIdRef.current,
             receiverId: remotePeerId
@@ -682,36 +683,31 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
 
   const handleIncomingVideoSignal = useCallback(async (signalData) => {
     try {
-      if (signalData.type === 'offer') {
-        // Ensure local media stream is available first
-        await ensureLocalMediaStream();
-        
-        // Incoming call - create peer connection as responder
-        const localStream = localStreamRef.current;
-        const peer = await createPeerConnection(false, signalData.senderId, localStream);
-        peer.signal(signalData.signal);
-        peerConnectionRef.current = peer;
-        
-        // Show incoming call notification
-        setIsVideoRequestModalOpen(true);
-        incomingVideoRequestIdRef.current = signalData.senderId;
-        
-        // Auto-accept if already in video call mode or if user has video panel open
-        if (isVideoCallActiveRef.current || localStreamRef.current || remoteStreamRef.current) {
-          setTimeout(() => {
-            if (peerConnectionRef.current === peer && !peer.destroyed) {
-              // Accept the incoming call
-              setIsVideoRequestModalOpen(false);
-              setIsVideoCallActive(true);
-              isVideoCallActiveRef.current = true;
-              addMessage('System', 'Incoming video call accepted.', { type: 'system' });
-            }
-          }, 500);
-        }
-      } else if (signalData.type === 'answer' && peerConnectionRef.current) {
-        // Handle answer from remote peer
-        peerConnectionRef.current.signal(signalData.signal);
+      if (!signalData?.signal) {
+        return;
       }
+      if (signalData?.receiverId && signalData.receiverId !== clientIdRef.current) {
+        return;
+      }
+      const remotePeerId = typeof signalData?.senderId === 'string' ? signalData.senderId : '';
+      if (!remotePeerId) {
+        return;
+      }
+      remotePeerClientIdRef.current = remotePeerId;
+
+      let peer = peerConnectionRef.current;
+      if (!peer || peer.destroyed) {
+        if (signalData.signal.type !== 'offer') {
+          return;
+        }
+        await ensureLocalMediaStream();
+        peer = await createPeerConnection(false, remotePeerId);
+        peerConnectionRef.current = peer;
+        setIsVideoRequestModalOpen(false);
+        setIsVideoCallActive(true);
+        isVideoCallActiveRef.current = true;
+      }
+      peer.signal(signalData.signal);
     } catch (error) {
       console.error('Failed to handle video signal:', error);
       setTransportError(error.message || 'Failed to handle video signal.');
@@ -1097,7 +1093,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
         }
 
         const wsUrl = `${mqttConfig.protocol}://${mqttConfig.host}${mqttConfig.path}`;
-        const roomChannels = [`${topic}/presence`, `${topic}/chat`];
+        const roomChannels = [`${topic}/presence`, `${topic}/chat`, `video-signal/${clientIdRef.current}`];
 
         mqttClient = mqtt.connect(wsUrl, {
           clientId: mqttConnectionIdRef.current,
@@ -1215,6 +1211,14 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
                   senderCountry: selfCountryRef.current,
                 })
               );
+            }
+            return;
+          }
+
+          if (messageTopic.startsWith('video-signal/')) {
+            const videoSignalHandlers = videoSignalHandlersRef.current;
+            if (payload?.type === 'video-signal' || payload?.signal) {
+              void videoSignalHandlers.handleIncomingVideoSignal(payload);
             }
             return;
           }
