@@ -1,5 +1,5 @@
 import mqtt from 'mqtt';
-import Peer from 'peerjs';
+import SimplePeer from 'simple-peer';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapComponent from './components/MapComponent/MapComponent';
 import MenuButton from './components/MenuButton/MenuButton';
@@ -12,7 +12,25 @@ const MIN_SCAN_VISIBILITY_MS = 5 * 1000;
 const ROOM_ACTIVITY_EVENT_KEY = 'pyaw-pyaw-room-activity-event';
 const HIDDEN_TOPICS_KEY = 'pyaw-pyaw-hidden-topics';
 const KICKED_TOPICS_KEY = 'pyaw-pyaw-kicked-topics';
-const VIDEO_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const VIDEO_ICE_SERVERS = [
+  // Google STUN servers
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  
+  // Public STUN servers
+  { urls: 'stun:stun.services.mozilla.com' },
+  { urls: 'stun:stunserver.org:3478' },
+  { urls: 'stun:stun.ekiga.net' },
+  { urls: 'stun:stun.ideasip.com' },
+  { urls: 'stun:stun.iptel.org' },
+  
+  // TURN servers for better NAT traversal
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+];
 const VIDEO_REQUEST_TIMEOUT_MS = 60 * 1000;
 
 function normalizeBaseUrl(urlText) {
@@ -326,8 +344,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   const currentVideoRequestIdRef = useRef('');
   const incomingVideoRequestIdRef = useRef('');
   const incomingVideoRequestTimerRef = useRef(null);
-  const peerClientRef = useRef(null);
-  const peerReadyPromiseRef = useRef(null);
+  // Removed PeerJS references - now using SimplePeer
   const remotePeerClientIdRef = useRef('');
   const videoSignalHandlersRef = useRef({
     publishVideoSignal: () => {},
@@ -335,8 +352,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     handleStartVideoOffer: () => Promise.resolve(),
     handleIncomingVideoOffer: () => Promise.resolve(),
     handleIncomingVideoAnswer: () => Promise.resolve(),
-    handleIncomingVideoIceCandidate: () => Promise.resolve(),
-    handleIncomingWebrtcSignal: () => Promise.resolve(),
+    handleIncomingVideoSignal: () => Promise.resolve(),
     resetVideoCallState: () => {},
   });
   const peerConnectionRef = useRef(null);
@@ -441,11 +457,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!peerConnection) {
       return;
     }
-    if (typeof peerConnection.off === 'function') {
-      peerConnection.off();
-    }
-    if (typeof peerConnection.close === 'function') {
-      peerConnection.close();
+    if (typeof peerConnection.destroy === 'function') {
+      peerConnection.destroy();
     }
     peerConnectionRef.current = null;
   }, []);
@@ -538,91 +551,167 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     return stream;
   }, []);
 
-  const bindPeerConnection = useCallback(
-    mediaConnection => {
-      closePeerConnection();
-      peerConnectionRef.current = mediaConnection;
-      mediaConnection.on('stream', streamData => {
+  // SimplePeer handles connection events internally, no need for bindPeerConnection
+
+  const createPeerConnection = useCallback(async (isInitiator = false, remotePeerId = null) => {
+    try {
+      const stream = await ensureLocalMediaStream();
+      
+      const peer = new SimplePeer({
+        initiator: isInitiator,
+        trickle: true,
+        config: {
+          iceServers: VIDEO_ICE_SERVERS,
+          iceCandidatePoolSize: 10,
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
+        },
+        offerOptions: {
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        },
+        sdpTransform: (sdp) => {
+          // Optimize for lower latency
+          return sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=extmap:3 urn:ietf:params:rtp-hdrext:toffset\r\n');
+        }
+      });
+
+      peer.on('signal', data => {
+        if (mqttClient.connected && remotePeerId) {
+          const signalData = {
+            type: isInitiator ? 'offer' : 'answer',
+            signal: data,
+            senderId: clientIdRef.current,
+            receiverId: remotePeerId
+          };
+          mqttClient.publish(`video-signal/${remotePeerId}`, JSON.stringify(signalData));
+        }
+      });
+
+      peer.on('connect', () => {
+        setIsVideoCallActive(true);
+        isVideoCallActiveRef.current = true;
+        addMessage('System', 'Video call connected.', { type: 'system' });
+        
+        // Start connection quality monitoring
+        const monitorConnection = () => {
+          if (!peer || peer.destroyed) return;
+          
+          const stats = peer._pc?.getStats();
+          if (stats) {
+            stats.then(report => {
+              report.forEach(stat => {
+                if (stat.type === 'inbound-rtp' && stat.mediaType === 'video') {
+                  const packetLoss = stat.packetsLost / stat.packetsReceived;
+                  const jitter = stat.jitter;
+                  
+                  // Adaptive bitrate based on connection quality
+                  if (packetLoss > 0.05 || jitter > 0.1) {
+                    // Reduce video quality if high packet loss or jitter
+                    const sender = peer._pc?.getSenders()?.find(s => s.track?.kind === 'video');
+                    if (sender) {
+                      const params = sender.getParameters();
+                      if (params.encodings && params.encodings[0]) {
+                        params.encodings[0].maxBitrate = 250000; // Reduce to 250kbps
+                        sender.setParameters(params);
+                      }
+                    }
+                  }
+                }
+              });
+            }).catch(() => {});
+          }
+          
+          setTimeout(monitorConnection, 2000);
+        };
+        
+        monitorConnection();
+      });
+
+      peer.on('stream', streamData => {
         remoteStreamRef.current = streamData;
         setRemoteMediaStream(streamData);
       });
-      mediaConnection.on('close', () => {
-        if (!isVideoCallActiveRef.current) {
-          return;
-        }
-        resetVideoCallState();
-      });
-      mediaConnection.on('error', error => {
-        if (!isVideoCallActiveRef.current) {
-          return;
-        }
-        setTransportError(error?.message || 'Video call transport error.');
-        resetVideoCallState();
-      });
-    },
-    [closePeerConnection, resetVideoCallState]
-  );
 
-  const ensurePeerClient = useCallback(async () => {
-    if (peerClientRef.current && !peerClientRef.current.destroyed && peerClientRef.current.open) {
-      return peerClientRef.current;
-    }
-    if (peerReadyPromiseRef.current) {
-      return peerReadyPromiseRef.current;
-    }
-    peerReadyPromiseRef.current = new Promise((resolve, reject) => {
-      const peerClient = new Peer(clientIdRef.current, { config: { iceServers: VIDEO_ICE_SERVERS } });
-      let hasOpened = false;
-      peerClient.on('open', () => {
-        hasOpened = true;
-        peerClientRef.current = peerClient;
-        resolve(peerClient);
-      });
-      peerClient.on('call', async mediaConnection => {
-        try {
-          const stream = await ensureLocalMediaStream();
-          setIsVideoCallActive(true);
-          isVideoCallActiveRef.current = true;
-          bindPeerConnection(mediaConnection);
-          mediaConnection.answer(stream);
-        } catch (error) {
-          mediaConnection.close();
-          setTransportError(error?.message || 'Unable to answer video call.');
+      peer.on('error', error => {
+        console.error('WebRTC error:', error);
+        
+        // Handle specific error types
+        if (error.code === 'ERR_ICE_CONNECTION_FAILURE') {
+          setTransportError('Connection failed. Trying alternative servers...');
+          
+          // Attempt reconnection after delay
+          setTimeout(() => {
+            if (isVideoCallActiveRef.current && !peer.destroyed) {
+              // Try to reconnect with different ICE servers
+              const reconnectPeer = async () => {
+                try {
+                  const newPeer = await createPeerConnection(true, remotePeerId);
+                  if (peerConnectionRef.current === peer) {
+                    peerConnectionRef.current = newPeer;
+                  }
+                } catch (reconnectError) {
+                  setTransportError('Unable to reconnect. Please try again.');
+                  resetVideoCallState();
+                }
+              };
+              reconnectPeer();
+            }
+          }, 3000);
+        } else {
+          setTransportError(error.message || 'Video call connection error.');
           resetVideoCallState();
         }
       });
-      peerClient.on('error', error => {
-        if (hasOpened) {
-          setTransportError(error?.message || 'Video call transport error.');
-          if (isVideoCallActiveRef.current) {
-            resetVideoCallState();
-          }
-          return;
-        }
-        reject(error);
-      });
-      peerClient.on('close', () => {
-        peerClientRef.current = null;
-      });
-    })
-      .finally(() => {
-        peerReadyPromiseRef.current = null;
-      });
-    return peerReadyPromiseRef.current;
-  }, [bindPeerConnection, ensureLocalMediaStream, resetVideoCallState]);
 
-  useEffect(() => {
-    void ensurePeerClient().catch(() => {});
-    return () => {
-      if (peerClientRef.current && !peerClientRef.current.destroyed) {
-        peerClientRef.current.destroy();
+      peer.on('close', () => {
+        resetVideoCallState();
+      });
+
+      if (stream) {
+        peer.addStream(stream);
       }
-      peerClientRef.current = null;
-    };
-  }, [ensurePeerClient]);
+
+      return peer;
+    } catch (error) {
+      setTransportError(error.message || 'Failed to create peer connection.');
+      throw error;
+    }
+  }, [ensureLocalMediaStream, resetVideoCallState]);
+
+  const handleIncomingVideoSignal = useCallback(async (signalData) => {
+    try {
+      if (signalData.type === 'offer') {
+        // Incoming call - create peer connection as responder
+        const peer = await createPeerConnection(false, signalData.senderId);
+        peer.signal(signalData.signal);
+        peerConnectionRef.current = peer;
+        
+        // Show incoming call notification
+        setIsVideoRequestModalOpen(true);
+        incomingVideoRequestIdRef.current = signalData.senderId;
+        
+        // Auto-accept if already in video call mode
+        if (isVideoCallActiveRef.current) {
+          setTimeout(() => {
+            if (peerConnectionRef.current === peer && !peer.destroyed) {
+              // Already connected, just need to complete signaling
+            }
+          }, 1000);
+        }
+      } else if (signalData.type === 'answer' && peerConnectionRef.current) {
+        // Handle answer from remote peer
+        peerConnectionRef.current.signal(signalData.signal);
+      }
+    } catch (error) {
+      console.error('Failed to handle video signal:', error);
+      setTransportError(error.message || 'Failed to handle video signal.');
+      resetVideoCallState();
+    }
+  }, [createPeerConnection, resetVideoCallState]);
 
   const ensurePeerConnection = useCallback(async (isInitiator = false) => {
-    if (peerConnectionRef.current) {
+    if (peerConnectionRef.current && !peerConnectionRef.current.destroyed) {
       return peerConnectionRef.current;
     }
     if (!isInitiator) {
@@ -632,12 +721,10 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     if (!remotePeerId) {
       throw new Error('Peer is not ready for video call.');
     }
-    const peerClient = await ensurePeerClient();
-    const stream = await ensureLocalMediaStream();
-    const mediaConnection = peerClient.call(remotePeerId, stream);
-    bindPeerConnection(mediaConnection);
-    return mediaConnection;
-  }, [bindPeerConnection, ensureLocalMediaStream, ensurePeerClient]);
+    const peer = await createPeerConnection(true, remotePeerId);
+    peerConnectionRef.current = peer;
+    return peer;
+  }, [createPeerConnection]);
 
   const handleStartVideoOffer = useCallback(async () => {
     try {
@@ -652,24 +739,20 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
     }
   }, [ensurePeerConnection, resetVideoCallState]);
 
-  const handleIncomingWebrtcSignal = useCallback(
-    async () => {},
-    []
-  );
+  const handleIncomingVideoOffer = useCallback(async () => {
+    // Video offer is now handled through MQTT signaling
+  }, []);
 
-  const handleIncomingVideoOffer = useCallback(async () => {}, []);
-
-  const handleIncomingVideoAnswer = useCallback(async () => {}, []);
-
-  const handleIncomingVideoIceCandidate = useCallback(async () => {}, []);
+  const handleIncomingVideoAnswer = useCallback(async () => {
+    // Video answer is now handled through MQTT signaling
+  }, []);
 
   videoSignalHandlersRef.current.publishVideoSignal = publishVideoSignal;
   videoSignalHandlersRef.current.clearVideoRequestTimer = clearVideoRequestTimer;
   videoSignalHandlersRef.current.handleStartVideoOffer = handleStartVideoOffer;
   videoSignalHandlersRef.current.handleIncomingVideoOffer = handleIncomingVideoOffer;
   videoSignalHandlersRef.current.handleIncomingVideoAnswer = handleIncomingVideoAnswer;
-  videoSignalHandlersRef.current.handleIncomingVideoIceCandidate = handleIncomingVideoIceCandidate;
-  videoSignalHandlersRef.current.handleIncomingWebrtcSignal = handleIncomingWebrtcSignal;
+  videoSignalHandlersRef.current.handleIncomingVideoSignal = handleIncomingVideoSignal;
   videoSignalHandlersRef.current.resetVideoCallState = resetVideoCallState;
 
   const scrollToBottom = (behavior = 'smooth') => {
@@ -1222,8 +1305,8 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
               void videoSignalHandlers.handleIncomingVideoIceCandidate(payload);
               return;
             }
-            if (payload?.type === 'webrtc-signal') {
-              void videoSignalHandlers.handleIncomingWebrtcSignal(payload);
+            if (payload?.type === 'webrtc-signal' || payload?.type === 'video-signal') {
+              void videoSignalHandlers.handleIncomingVideoSignal(payload);
               return;
             }
             if (payload?.type === 'kill') {
