@@ -792,7 +792,7 @@ function RoomTab({ topic, role, sessionExpiresAt, username, onExit, onSessionExp
   }, []);
 
   const handleIncomingVideoAnswer = useCallback(async () => {
-    // Video answer is now handled through MQTT signaling
+    // Video answer is now handled through MQTT signaling data
   }, []);
 
   videoSignalHandlersRef.current.publishVideoSignal = publishVideoSignal;
